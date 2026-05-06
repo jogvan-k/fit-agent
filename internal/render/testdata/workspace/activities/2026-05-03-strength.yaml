@@ -1,0 +1,14 @@
+# fit-agent activity day. Regenerated on every `fit-agent fetch`.
+# Units: time in seconds (HH:MM:SS where labeled), distance in meters,
+# speed in m/s, pace in sec/km, power in watts, HR in bpm.
+# Source of truth: ../.cache/activities/<icu_id>.{json,fit}
+date: 2026-05-03
+generated_at: 2026-05-03T22:14:00+02:00
+source: intervals.icu
+---
+icu_id: i12346
+name: Evening Strength
+type: WeightTraining
+start_local: "2026-05-03T18:00:00"
+duration_s: 1800
+athlete_notes: ""

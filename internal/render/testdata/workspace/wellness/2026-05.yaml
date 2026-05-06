@@ -1,0 +1,25 @@
+# Daily wellness for 2026-05. Upserted by date on every `fit-agent fetch`.
+# Units: HR in bpm, sleep in hours (sleep_hours) and seconds
+# (sleep_seconds), weight in kg, stress unit-less, hrv (RMSSD) in ms.
+# Source of truth: ../.cache/wellness/2026-05.json
+month: 2026-05
+generated_at: 2026-05-03T22:14:00+02:00
+days:
+  "2026-05-01":
+    resting_hr: 48
+    hrv_rmssd: 72.0
+    sleep_seconds: 26640
+    sleep_hours: 7.4
+    sleep_score: 84
+    steps: 8421
+    weight_kg: 74.2
+    stress_avg: 28
+  "2026-05-02":
+    resting_hr: 50
+    hrv_rmssd: 65.0
+    sleep_seconds: 24480
+    sleep_hours: 6.8
+  "2026-05-03":
+    notes: |
+      Long ride day.
+      Legs felt heavy.

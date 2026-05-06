@@ -837,15 +837,15 @@ dependencies.
 - [x] Test against `~/icu/activity.fit` copied into `testdata/fit/`
 
 ### M4 — `internal/workspace` + `internal/render`
-- [ ] Canonical path helpers (`Layout` struct: workspace root + all subpaths)
-- [ ] Atomic write helper (`temp + rename`, preserve mode)
-- [ ] YAML emitter for activity day (multi-doc) with header comment
-- [ ] YAML emitter for wellness month with header comment
-- [ ] Markdown emitter for planned-workout day (frontmatter + DSL fence)
-- [ ] Wellness upsert-by-date (read existing → merge → write)
-- [ ] Ownership guard: refuse to overwrite agent-owned files
-- [ ] Golden tests: `testdata/icu/*.json + testdata/fit/*.fit → testdata/workspace/*.{yaml,md}`
-- [ ] `go test -update` flag to regenerate goldens
+- [x] Canonical path helpers (`Layout` struct: workspace root + all subpaths)
+- [x] Atomic write helper (`temp + rename`, preserve mode)
+- [x] YAML emitter for activity day (multi-doc) with header comment
+- [x] YAML emitter for wellness month with header comment
+- [x] Markdown emitter for planned-workout day (frontmatter + DSL fence)
+- [x] Wellness upsert-by-date (read existing → merge → write)
+- [x] Ownership guard: refuse to overwrite agent-owned files
+- [x] Golden tests: `testdata/icu/*.json + testdata/fit/*.fit → testdata/workspace/*.{yaml,md}`
+- [x] `go test -update` flag to regenerate goldens
 
 ### M5 — `init` command
 - [ ] Interactive prompts via `huh` (workspace, API key, profile name)

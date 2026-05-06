@@ -1,0 +1,48 @@
+# fit-agent activity day. Regenerated on every `fit-agent fetch`.
+# Units: time in seconds (HH:MM:SS where labeled), distance in meters,
+# speed in m/s, pace in sec/km, power in watts, HR in bpm.
+# Source of truth: ../.cache/activities/<icu_id>.{json,fit}
+date: 2026-05-03
+generated_at: 2026-05-03T22:14:00+02:00
+source: intervals.icu
+---
+icu_id: i55555
+name: Easy Run
+type: Run
+start_local: "2026-05-03T07:30:00"
+duration_s: 3643
+moving_time_s: 3441
+distance_m: 10156.9
+elevation_gain_m: 42.0
+tss: 62.5
+rpe: 6
+avg_hr: 145
+max_hr: 168
+avg_speed_mps: 2.952
+athlete_notes: |
+  Felt good. Cool morning.
+laps:
+  - i: 1
+    type: active
+    start_local: 2026-05-03T08:40:28+02:00
+    duration_s: 3643
+    distance_m: 10156.9
+    avg_hr: 141
+    max_hr: 155
+    avg_cadence: 79
+    avg_speed_mps: 2.951
+    avg_pace_sec_per_km: 339
+  - i: 2
+    type: recovery
+    start_local: 2026-05-03T09:41:11+02:00
+    duration_s: 1
+    avg_hr: 146
+    max_hr: 146
+    avg_cadence: 76
+    avg_speed_mps: 2.911
+    avg_pace_sec_per_km: 344
+intervals:
+  - kind: active
+    laps: [1]
+  - kind: recovery
+    laps: [2]
