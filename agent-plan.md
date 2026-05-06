@@ -887,14 +887,14 @@ dependencies.
 - [x] Document supported syntax in `workout-builder/SKILL.md` template
 
 ### M8 — `push-workouts` command
-- [ ] Read all `planned-workouts/*.md` in range, parse frontmatter + DSL fences
-- [ ] Diff against `.cache/events/*.json`
-- [ ] `POST` for new (`icu_event_id == null`)
-- [ ] `PUT` for changed
-- [ ] `DELETE` for removed (only when `--prune`)
-- [ ] Write returned `icu_event_id` back into the markdown frontmatter
-- [ ] `--dry-run` prints the icu description that would be sent
-- [ ] End-to-end test against fake icu server (create → modify → delete)
+- [x] Read all `planned-workouts/*.md` in range, parse frontmatter + DSL fences
+- [x] Diff against `.cache/events/*.json`
+- [x] `POST` for new (`icu_event_id == null`)
+- [x] `PUT` for changed
+- [x] `DELETE` for removed (only when `--prune`)
+- [x] Write returned `icu_event_id` back into the markdown frontmatter
+- [x] `--dry-run` prints the icu description that would be sent
+- [x] End-to-end test against fake icu server (create → modify → delete)
 
 ### M9 — Polish & release
 - [ ] Coherent error messages (file path + actionable suggestion)

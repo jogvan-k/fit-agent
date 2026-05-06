@@ -48,6 +48,7 @@ The CLI is invoked by an agent; it never calls an LLM itself.`,
 	cmd.AddCommand(newRenderCmd())
 	cmd.AddCommand(newFetchCmd())
 	cmd.AddCommand(newWorkoutCmd())
+	cmd.AddCommand(newPushWorkoutsCmd())
 
 	return cmd
 }
