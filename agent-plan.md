@@ -848,15 +848,15 @@ dependencies.
 - [x] `go test -update` flag to regenerate goldens
 
 ### M5 — `init` command
-- [ ] Interactive prompts via `huh` (workspace, API key, profile name)
-- [ ] `--non-interactive` mode reading flags / env
-- [ ] API key validation via `GET /athlete/0`
-- [ ] Embedded templates via `go:embed` for `ATHLETE-PROFILE.md`, `README.md`, three `skills/<name>/SKILL.md` files
-- [ ] Write `<workspace>/.fit-agent.toml` profile pointer
-- [ ] Write `<workspace>/.gitignore` excluding `fit-agent/.cache/`
-- [ ] Per-file overwrite guard (prompt unless `--force`)
-- [ ] Re-init safe: missing files are recreated, present files are left alone
-- [ ] Smoke test: run `init --non-interactive` against a tmp dir, assert tree
+- [x] Interactive prompts via `huh` (workspace, API key, profile name)
+- [x] `--non-interactive` mode reading flags / env
+- [x] API key validation via `GET /athlete/0`
+- [x] Embedded templates via `go:embed` for `ATHLETE-PROFILE.md`, `README.md`, three `skills/<name>/SKILL.md` files
+- [x] Write `<workspace>/.fit-agent.toml` profile pointer
+- [x] Write `<workspace>/.gitignore` excluding `fit-agent/.cache/`
+- [x] Per-file overwrite guard (prompt unless `--force`)
+- [x] Re-init safe: missing files are recreated, present files are left alone
+- [x] Smoke test: run `init --non-interactive` against a tmp dir, assert tree
 
 ### M6 — `cache` + `render` + `fetch` commands
 - [ ] `fit-agent cache athlete`

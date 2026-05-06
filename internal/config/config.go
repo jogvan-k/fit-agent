@@ -35,6 +35,10 @@ type Profile struct {
 	Workspace string `toml:"workspace"`
 	// IcuAthleteID is the intervals.icu athlete identifier (e.g. "i12345").
 	IcuAthleteID string `toml:"icu_athlete_id"`
+	// IcuTimezone is the IANA timezone reported by intervals.icu for the
+	// athlete (e.g. "Europe/Madrid"). Cached here so commands can render
+	// local timestamps without re-fetching /athlete/0.
+	IcuTimezone string `toml:"icu_timezone,omitempty"`
 	// IcuAPIKey is only set when the OS keyring is unavailable.
 	// It MUST NOT be set if a keyring entry exists for this profile.
 	IcuAPIKey string `toml:"icu_api_key,omitempty"`
