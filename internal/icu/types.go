@@ -50,21 +50,39 @@ type ActivitySummary struct {
 	MaxWatts           int     `json:"max_watts,omitempty"`
 	AverageSpeed       float64 `json:"average_speed,omitempty"`
 	MaxSpeed           float64 `json:"max_speed,omitempty"`
-	HasFITFile         bool    `json:"has_fit_file,omitempty"`
+	// FileType is the source file type when intervals.icu has the
+	// file (typically "fit", "tcx", "gpx"). Empty when no file is
+	// associated.
+	FileType string `json:"file_type,omitempty"`
+	// Source carries the upload source (e.g. "STRAVA", "GARMIN");
+	// useful for distinguishing manually-entered activities (no
+	// file) from device uploads.
+	Source string `json:"source,omitempty"`
 }
 
 // WellnessDay is a single daily wellness row.
+//
+// Field names follow intervals.icu's camelCase JSON. Numeric fields
+// that the API may return as either integer or float are typed as
+// float64 to accept both; renderers round to ints where appropriate.
 type WellnessDay struct {
-	ID         string  `json:"id"` // YYYY-MM-DD
-	RestingHR  int     `json:"restingHR,omitempty"`
-	HRV        float64 `json:"hrv,omitempty"`
-	HRVSDNN    float64 `json:"hrvSDNN,omitempty"`
-	Sleep      float64 `json:"sleepSecs,omitempty"` // seconds
-	SleepScore int     `json:"sleepScore,omitempty"`
-	Steps      int     `json:"steps,omitempty"`
-	Weight     float64 `json:"weight,omitempty"`
-	Stress     int     `json:"avgStress,omitempty"`
-	Comments   string  `json:"comments,omitempty"`
+	ID            string  `json:"id"` // YYYY-MM-DD
+	RestingHR     int     `json:"restingHR,omitempty"`
+	HRV           float64 `json:"hrv,omitempty"`
+	HRVSDNN       float64 `json:"hrvSDNN,omitempty"`
+	Sleep         float64 `json:"sleepSecs,omitempty"` // seconds
+	SleepScore    float64 `json:"sleepScore,omitempty"`
+	SleepQuality  float64 `json:"sleepQuality,omitempty"`
+	AvgSleepingHR int     `json:"avgSleepingHR,omitempty"`
+	Steps         int     `json:"steps,omitempty"`
+	Weight        float64 `json:"weight,omitempty"`
+	BodyFat       float64 `json:"bodyFat,omitempty"`
+	Stress        float64 `json:"stress,omitempty"`
+	VO2Max        float64 `json:"vo2max,omitempty"`
+	CTL           float64 `json:"ctl,omitempty"`
+	ATL           float64 `json:"atl,omitempty"`
+	RampRate      float64 `json:"rampRate,omitempty"`
+	Comments      string  `json:"comments,omitempty"`
 }
 
 // Event is a planned workout (category=WORKOUT) on intervals.icu.

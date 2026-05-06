@@ -10,10 +10,10 @@ days:
     hrv_rmssd: 72.0
     sleep_seconds: 26640
     sleep_hours: 7.4
-    sleep_score: 84
+    sleep_score: 84.0
     steps: 8421
     weight_kg: 74.2
-    stress_avg: 28
+    stress_avg: 28.0
   "2026-05-02":
     resting_hr: 50
     hrv_rmssd: 65.0

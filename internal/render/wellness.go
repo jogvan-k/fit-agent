@@ -88,7 +88,13 @@ func writeWellnessDay(b *bytes.Buffer, d icu.WellnessDay) {
 		fmt.Fprintf(b, "    sleep_hours: %s\n", formatFloat(d.Sleep/3600.0, 2))
 	}
 	if d.SleepScore > 0 {
-		fmt.Fprintf(b, "    sleep_score: %d\n", d.SleepScore)
+		fmt.Fprintf(b, "    sleep_score: %s\n", formatFloat(d.SleepScore, 1))
+	}
+	if d.SleepQuality > 0 {
+		fmt.Fprintf(b, "    sleep_quality: %s\n", formatFloat(d.SleepQuality, 1))
+	}
+	if d.AvgSleepingHR > 0 {
+		fmt.Fprintf(b, "    avg_sleeping_hr: %d\n", d.AvgSleepingHR)
 	}
 	if d.Steps > 0 {
 		fmt.Fprintf(b, "    steps: %d\n", d.Steps)
@@ -96,8 +102,23 @@ func writeWellnessDay(b *bytes.Buffer, d icu.WellnessDay) {
 	if d.Weight > 0 {
 		fmt.Fprintf(b, "    weight_kg: %s\n", formatFloat(d.Weight, 2))
 	}
+	if d.BodyFat > 0 {
+		fmt.Fprintf(b, "    body_fat_pct: %s\n", formatFloat(d.BodyFat, 1))
+	}
 	if d.Stress > 0 {
-		fmt.Fprintf(b, "    stress_avg: %d\n", d.Stress)
+		fmt.Fprintf(b, "    stress_avg: %s\n", formatFloat(d.Stress, 1))
+	}
+	if d.VO2Max > 0 {
+		fmt.Fprintf(b, "    vo2max: %s\n", formatFloat(d.VO2Max, 1))
+	}
+	if d.CTL > 0 {
+		fmt.Fprintf(b, "    ctl: %s\n", formatFloat(d.CTL, 1))
+	}
+	if d.ATL > 0 {
+		fmt.Fprintf(b, "    atl: %s\n", formatFloat(d.ATL, 1))
+	}
+	if d.RampRate != 0 {
+		fmt.Fprintf(b, "    ramp_rate: %s\n", formatFloat(d.RampRate, 2))
 	}
 	if d.Comments != "" {
 		fmt.Fprintf(b, "    notes: %s\n", yamlBlockScalar(d.Comments, 4))
