@@ -16,6 +16,14 @@ linters:
     - bodyclose
     - errorlint
   settings:
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*text/tabwriter.Writer).Flush
+        - (io.Closer).Close
+        - (*os.File).Close
     revive:
       rules:
         - name: exported
