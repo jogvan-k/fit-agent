@@ -72,9 +72,47 @@ them. We don't have external consumers in v1.
 YAML data files always start with a header comment describing units and
 the path to the corresponding cache file. Don't drop the header.
 
+## Build & test
+
+The Makefile is the canonical entry point; everything wraps `go` so it
+also works without make.
+
+```sh
+make build       # -> bin/fit-agent (with version stamped from `git describe`)
+make test        # go test ./...
+make check       # fmt + vet + test (run before pushing)
+make lint        # golangci-lint run
+make tidy        # go mod tidy
+make clean       # rm -rf bin
+```
+
+Without make:
+
+```sh
+go build -o bin/fit-agent ./cmd/fit-agent
+go test ./...
+go test -race ./...                  # what CI runs
+go test -cover ./...                 # quick coverage glance
+go test -run TestRateLimit ./internal/icu -v   # focused
+./bin/fit-agent --help
+```
+
+Coverage target on data-shaping packages (`icu`, `fitparse`, `render`,
+`workoutdsl`) is 80% — see the Testing section below.
+
+Golden tests under `internal/render` regenerate with:
+
+```sh
+go test ./internal/render -update    # then eyeball the diff before committing
+```
+
+CI (`.github/workflows/ci.yml`) runs `go mod tidy -diff`, `go build`,
+`go vet`, `go test -race -coverprofile`, and `golangci-lint run` on every
+push and PR. Match it locally with `make check && make lint`.
+
 ## Coding standards
 
-- Go 1.22+ (whatever the CI matrix pins).
+- Go 1.25+ (whatever the CI matrix pins).
 - `gofmt` and `goimports` clean; `golangci-lint run` clean.
 - Public APIs documented; doc comments start with the identifier name.
 - Errors wrapped with `fmt.Errorf("...: %w", err)`. No `panic` outside

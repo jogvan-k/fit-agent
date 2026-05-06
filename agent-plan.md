@@ -792,39 +792,39 @@ suggestion; cross-milestone parallelism is fine where there are no
 dependencies.
 
 ### M0 — Repo scaffolding
-- [ ] `go mod init github.com/<owner>/fit-agent`, set Go version
-- [ ] `cmd/fit-agent/main.go` with cobra root command + `--version`
-- [ ] `Makefile` (or `taskfile`) with `build`, `test`, `lint`, `tidy`
-- [ ] `.golangci.yml` with reasonable defaults
-- [ ] `.github/workflows/ci.yml` running build, test, lint on push/PR
-- [ ] `LICENSE` (MIT) and minimal `README.md`
-- [ ] Pre-commit hook example (`gofmt`, `go vet`, `golangci-lint run`)
+- [x] `go mod init github.com/<owner>/fit-agent`, set Go version
+- [x] `cmd/fit-agent/main.go` with cobra root command + `--version`
+- [x] `Makefile` (or `taskfile`) with `build`, `test`, `lint`, `tidy`
+- [x] `.golangci.yml` with reasonable defaults
+- [x] `.github/workflows/ci.yml` running build, test, lint on push/PR
+- [x] `LICENSE` (MIT) and minimal `README.md`
+- [x] Pre-commit hook example (`gofmt`, `go vet`, `golangci-lint run`)
 
 ### M1 — `internal/config`
-- [ ] TOML schema + load/save with explicit `0600` permissions
-- [ ] XDG path resolution (`$XDG_CONFIG_HOME` fallback to `~/.config`)
-- [ ] Profile selection: flag → env (`FIT_AGENT_PROFILE`) → workspace `.fit-agent.toml` → `default`
-- [ ] Keyring backend via `zalando/go-keyring` (service `fit-agent`, account `<profile>`)
-- [ ] Fallback path: store key in TOML when keyring is unavailable, with explicit warning
-- [ ] Round-trip tests (write → read → assert equal)
-- [ ] Migration-safe loader (unknown keys ignored, missing keys defaulted)
+- [x] TOML schema + load/save with explicit `0600` permissions
+- [x] XDG path resolution (`$XDG_CONFIG_HOME` fallback to `~/.config`)
+- [x] Profile selection: flag → env (`FIT_AGENT_PROFILE`) → workspace `.fit-agent.toml` → `default`
+- [x] Keyring backend via `zalando/go-keyring` (service `fit-agent`, account `<profile>`)
+- [x] Fallback path: store key in TOML when keyring is unavailable, with explicit warning
+- [x] Round-trip tests (write → read → assert equal)
+- [x] Migration-safe loader (unknown keys ignored, missing keys defaulted)
 
 ### M2 — `internal/icu` HTTP client
-- [ ] `Client` struct with injected `*http.Client` and base URL
-- [ ] HTTP Basic Auth (`API_KEY` / user key)
-- [ ] `GET /athlete/{id}` (and `/athlete/0` self-resolve)
-- [ ] `GET /athlete/{id}/activities?oldest=&newest=`
-- [ ] `GET /activity/{id}` (single)
-- [ ] `GET /activity/{id}/fit-file` (streamed to caller-provided `io.Writer`)
-- [ ] `GET /athlete/{id}/wellness?oldest=&newest=`
-- [ ] `GET /athlete/{id}/events?oldest=&newest=&category=WORKOUT`
-- [ ] `POST /athlete/{id}/events`
-- [ ] `PUT /athlete/{id}/events/{id}`
-- [ ] `DELETE /athlete/{id}/events/{id}`
-- [ ] Exponential backoff on `429`/`5xx` honoring `Retry-After`
-- [ ] Token-bucket rate limiter
-- [ ] Typed error wrapping (`ErrUnauthorized`, `ErrNotFound`, `ErrRateLimited`)
-- [ ] Tests against `httptest.Server`: happy path, 401, 404, 429+retry, 5xx+retry, malformed JSON, FIT streaming
+- [x] `Client` struct with injected `*http.Client` and base URL
+- [x] HTTP Basic Auth (`API_KEY` / user key)
+- [x] `GET /athlete/{id}` (and `/athlete/0` self-resolve)
+- [x] `GET /athlete/{id}/activities?oldest=&newest=`
+- [x] `GET /activity/{id}` (single)
+- [x] `GET /activity/{id}/fit-file` (streamed to caller-provided `io.Writer`)
+- [x] `GET /athlete/{id}/wellness?oldest=&newest=`
+- [x] `GET /athlete/{id}/events?oldest=&newest=&category=WORKOUT`
+- [x] `POST /athlete/{id}/events`
+- [x] `PUT /athlete/{id}/events/{id}`
+- [x] `DELETE /athlete/{id}/events/{id}`
+- [x] Exponential backoff on `429`/`5xx` honoring `Retry-After`
+- [x] Token-bucket rate limiter
+- [x] Typed error wrapping (`ErrUnauthorized`, `ErrNotFound`, `ErrRateLimited`)
+- [x] Tests against `httptest.Server`: happy path, 401, 404, 429+retry, 5xx+retry, malformed JSON, FIT streaming
 
 ### M3 — `internal/fitparse`
 - [ ] Decode `.fit` via `muktihari/fit` into a `ParsedActivity` struct
