@@ -859,23 +859,23 @@ dependencies.
 - [x] Smoke test: run `init --non-interactive` against a tmp dir, assert tree
 
 ### M6 — `cache` + `render` + `fetch` commands
-- [ ] `fit-agent cache athlete`
-- [ ] `fit-agent cache activities [range]` (list + per-activity json + fit)
-- [ ] `fit-agent cache activity <id>`
-- [ ] `fit-agent cache wellness [range]`
-- [ ] `fit-agent cache events [range]`
-- [ ] `fit-agent cache all [range]`
-- [ ] `fit-agent render activities [range]`
-- [ ] `fit-agent render activity <id>` (stdout)
-- [ ] `fit-agent render wellness [--month | range]`
-- [ ] `fit-agent render planned [range]`
-- [ ] `fit-agent render all [range]`
-- [ ] `fit-agent fetch [range]` = `cache all` + `render all`
-- [ ] `--dry-run` on every command above
+- [x] `fit-agent cache athlete`
+- [x] `fit-agent cache activities [range]` (list + per-activity json + fit)
+- [x] `fit-agent cache activity <id>`
+- [x] `fit-agent cache wellness [range]`
+- [x] `fit-agent cache events [range]`
+- [x] `fit-agent cache all [range]`
+- [x] `fit-agent render activities [range]`
+- [x] `fit-agent render activity <id>` (stdout)
+- [x] `fit-agent render wellness [--month | range]`
+- [x] `fit-agent render planned [range]`
+- [x] `fit-agent render all [range]`
+- [x] `fit-agent fetch [range]` = `cache all` + `render all`
+- [x] `--dry-run` on every command above
 - [ ] `--json` machine-readable output where applicable
-- [ ] `--force-refit` flag for cache activities
-- [ ] Combined progress summary (added/updated/unchanged counts)
-- [ ] Idempotency tests: run twice → second run reports zero changes
+- [x] `--force-refit` flag for cache activities
+- [x] Combined progress summary (added/updated/unchanged counts)
+- [x] Idempotency tests: run twice → second run reports zero changes
 
 ### M7 — `internal/workoutdsl`
 - [ ] Tokenizer + parser for the `fit-workout` DSL (durations, zones, reps, ramps, free-text)

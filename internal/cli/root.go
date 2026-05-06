@@ -44,6 +44,9 @@ The CLI is invoked by an agent; it never calls an LLM itself.`,
 
 	cmd.AddCommand(newFitCmd())
 	cmd.AddCommand(newInitCmd())
+	cmd.AddCommand(newCacheCmd())
+	cmd.AddCommand(newRenderCmd())
+	cmd.AddCommand(newFetchCmd())
 
 	return cmd
 }
