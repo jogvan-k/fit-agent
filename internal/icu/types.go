@@ -1,0 +1,81 @@
+package icu
+
+// Athlete is the subset of /athlete/{id} we currently consume.
+//
+// intervals.icu returns ~50 fields here; we keep types loose (json.Number
+// where useful) and decode-then-ignore unknown fields by virtue of the
+// standard library's json behavior.
+type Athlete struct {
+	ID        string  `json:"id"`
+	Name      string  `json:"name"`
+	Email     string  `json:"email,omitempty"`
+	Timezone  string  `json:"timezone,omitempty"`
+	City      string  `json:"city,omitempty"`
+	Country   string  `json:"country,omitempty"`
+	Sex       string  `json:"sex,omitempty"`
+	BirthDate string  `json:"icu_date_of_birth,omitempty"`
+	Weight    float64 `json:"icu_weight,omitempty"`
+
+	// Thresholds and zones (only the most useful for v1; agents read raw
+	// JSON cache for the rest).
+	FTP               int     `json:"icu_ftp,omitempty"`
+	LTHR              int     `json:"icu_lthr,omitempty"`
+	RestingHR         int     `json:"icu_resting_hr,omitempty"`
+	MaxHR             int     `json:"icu_max_hr,omitempty"`
+	ThresholdPace     float64 `json:"icu_threshold_pace,omitempty"` // m/s
+	SwimThresholdPace float64 `json:"icu_swim_threshold_pace,omitempty"`
+
+	// PowerZones, HRZones, PaceZones are intentionally left as raw
+	// json.RawMessage on the cache side. Callers that need them today
+	// can re-decode from .cache/athlete.json.
+}
+
+// ActivitySummary is the JSON shape returned in the activity list and
+// detail endpoints. Only fields used by the renderer are typed today.
+type ActivitySummary struct {
+	ID                 string  `json:"id"`
+	Name               string  `json:"name"`
+	Description        string  `json:"description,omitempty"`
+	Type               string  `json:"type"`
+	StartDateLocal     string  `json:"start_date_local"`
+	ElapsedTime        int     `json:"elapsed_time,omitempty"`
+	MovingTime         int     `json:"moving_time,omitempty"`
+	Distance           float64 `json:"distance,omitempty"`
+	TotalElevationGain float64 `json:"total_elevation_gain,omitempty"`
+	IcuTrainingLoad    float64 `json:"icu_training_load,omitempty"`
+	IcuRPE             int     `json:"icu_rpe,omitempty"`
+	AverageHR          int     `json:"average_heartrate,omitempty"`
+	MaxHR              int     `json:"max_heartrate,omitempty"`
+	AverageWatts       int     `json:"average_watts,omitempty"`
+	MaxWatts           int     `json:"max_watts,omitempty"`
+	AverageSpeed       float64 `json:"average_speed,omitempty"`
+	MaxSpeed           float64 `json:"max_speed,omitempty"`
+	HasFITFile         bool    `json:"has_fit_file,omitempty"`
+}
+
+// WellnessDay is a single daily wellness row.
+type WellnessDay struct {
+	ID         string  `json:"id"` // YYYY-MM-DD
+	RestingHR  int     `json:"restingHR,omitempty"`
+	HRV        float64 `json:"hrv,omitempty"`
+	HRVSDNN    float64 `json:"hrvSDNN,omitempty"`
+	Sleep      float64 `json:"sleepSecs,omitempty"` // seconds
+	SleepScore int     `json:"sleepScore,omitempty"`
+	Steps      int     `json:"steps,omitempty"`
+	Weight     float64 `json:"weight,omitempty"`
+	Stress     int     `json:"avgStress,omitempty"`
+	Comments   string  `json:"comments,omitempty"`
+}
+
+// Event is a planned workout (category=WORKOUT) on intervals.icu.
+type Event struct {
+	ID             int64  `json:"id,omitempty"`
+	StartDateLocal string `json:"start_date_local"`
+	Category       string `json:"category"`
+	Name           string `json:"name"`
+	Description    string `json:"description,omitempty"`
+	Type           string `json:"type,omitempty"`
+	MovingTime     int    `json:"moving_time,omitempty"`
+	IndoorOutdoor  string `json:"indoor,omitempty"`
+	WorkoutDoc     string `json:"workout_doc,omitempty"`
+}
