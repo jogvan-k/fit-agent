@@ -42,5 +42,7 @@ The CLI is invoked by an agent; it never calls an LLM itself.`,
 
 	cmd.Flags().BoolVar(&showVersion, "version", false, "print version and exit")
 
+	cmd.AddCommand(newFitCmd())
+
 	return cmd
 }
