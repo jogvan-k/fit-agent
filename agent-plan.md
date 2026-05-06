@@ -827,14 +827,14 @@ dependencies.
 - [x] Tests against `httptest.Server`: happy path, 401, 404, 429+retry, 5xx+retry, malformed JSON, FIT streaming
 
 ### M3 — `internal/fitparse`
-- [ ] Decode `.fit` via `muktihari/fit` into a `ParsedActivity` struct
-- [ ] Extract per-`lap` summaries (HR, power, cadence, pace, distance, trigger)
-- [ ] Group laps into `intervals[]` using `workout_step_index` when present
-- [ ] Heuristic interval grouping fallback using `intensity` + lap names
-- [ ] Derived fields: pace (sec/km) from `avg_speed`, moving time
-- [ ] Handle missing fields gracefully (no power on a run, no HR on a swim)
-- [ ] CLI helper `fit-agent fit summary|laps|dump <path>`
-- [ ] Test against `~/icu/activity.fit` copied into `testdata/fit/`
+- [x] Decode `.fit` via `muktihari/fit` into a `ParsedActivity` struct
+- [x] Extract per-`lap` summaries (HR, power, cadence, pace, distance, trigger)
+- [x] Group laps into `intervals[]` using `workout_step_index` when present
+- [x] Heuristic interval grouping fallback using `intensity` + lap names
+- [x] Derived fields: pace (sec/km) from `avg_speed`, moving time
+- [x] Handle missing fields gracefully (no power on a run, no HR on a swim)
+- [x] CLI helper `fit-agent fit summary|laps|dump <path>`
+- [x] Test against `~/icu/activity.fit` copied into `testdata/fit/`
 
 ### M4 — `internal/workspace` + `internal/render`
 - [ ] Canonical path helpers (`Layout` struct: workspace root + all subpaths)
