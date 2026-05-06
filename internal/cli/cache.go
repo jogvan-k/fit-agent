@@ -16,7 +16,7 @@ func newCacheCmd() *cobra.Command {
 		Long: `cache stores the raw intervals.icu JSON (and FIT binaries)
 under <workspace>/fit-agent/.cache/.
 
-The cache is the source of truth for everything `+"`render`"+` produces;
+The cache is the source of truth for everything ` + "`render`" + ` produces;
 agent-facing YAML/markdown is regenerated from it on every fetch.
 
 Subcommands operate on a date range via --since N(d|w|m) (default 30d)

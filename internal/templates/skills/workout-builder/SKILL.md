@@ -53,28 +53,49 @@ Multiple workouts on one day are allowed: add more entries to the
 
 ## The `fit-workout` DSL
 
-> Note: the DSL is still being defined as part of v1. The grammar
-> below is the v1 contract; the `fit-agent workout parse|render|lint`
-> commands will validate it.
+The DSL is validated by `fit-agent workout parse|render|lint`. The
+canonical reference is `internal/workoutdsl` in the `fit-agent` repo.
 
-Each line is one step:
+### Lines
 
-- **`<duration> <intensity>`** — a single step, e.g. `10m Z2`,
-  `45s Z5`, `2h Z1`.
-- **`<repeats>x (<work> / <rest>)`** — a repeated work/rest set,
-  e.g. `5x (4m Z5 / 3m Z2)` or `8x (400m Z5 / 90s Z1)`.
-- **`<duration> ramp <fromZone>-<toZone>`** — a linear ramp,
-  e.g. `20m ramp Z1-Z3`.
+Each non-blank, non-comment line is one step. Lines starting with `#`
+are comments and ignored.
 
-Durations: `30s`, `5m`, `1h`, `1h30m`. Distances: `400m`, `1km`,
-`5km` (only for run/ride; swim uses `100y`/`100m` etc.).
+- **Simple step** — `- <amount> <intensity>`
+  - `- 10m Z2`
+  - `- 45s Z5`
+  - `- 2h Z1`
+  - `- 15m 55%`
+- **Repeat block** — `- <reps>x (<work> / <rest>)`
+  - `- 5x (4m Z5 / 3m Z2)`
+  - `- 8x (400m Z5 / 90s Z1)`
+  - `- 3x (1m 150% / 1m 50%)`
+- **Ramp** — `- <duration> ramp <fromZone>-<toZone>`
+  - `- 20m ramp Z1-Z3`
 
-Intensities: `Z1` … `Z6`, `recovery`, `easy`, `tempo`, `threshold`,
-`vo2`, `anaerobic`, `sprint`. Map to the athlete's zones from
-`ATHLETE-PROFILE.md`.
+### Amounts
 
-Free-text after `--` on any line becomes the step note that appears in
-intervals.icu, e.g. `5m Z2 -- easy spin between sets`.
+- **Duration**: composed of `Nh`, `Nm`, `Ns` parts. Examples: `30s`,
+  `5m`, `1h`, `1h30m`, `2h15m30s`.
+- **Distance**: `Nkm`, `Ny`, or `Nm` where `N >= 50`. Bare `Nm` with
+  `N < 50` is interpreted as minutes (so `5m` is five minutes, `400m`
+  is four hundred metres). Examples: `400m`, `1km`, `100y`.
+
+### Intensities
+
+- **Zones**: `Z1` … `Z6`.
+- **Named**: `recovery`, `easy`, `tempo`, `threshold`, `vo2`,
+  `anaerobic`, `sprint`. The CLI passes these through verbatim;
+  intervals.icu maps them to the athlete's zones.
+- **Percent of FTP / threshold pace**: `55%`, `120%` (range 0–200).
+
+### Notes
+
+Free-text after `--` on any line (or inside a repeat's work/rest body)
+becomes a step note that intervals.icu shows in the workout viewer:
+
+- `- 5m Z2 -- easy spin between sets`
+- `- 5x (4m Z5 -- hold steady / 3m Z2 -- recover)`
 
 ## Workflow
 

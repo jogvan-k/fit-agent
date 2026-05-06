@@ -159,3 +159,27 @@ If it bothers the agent we can skip empty rows entirely or emit an
 explicit `notes: ""`. Current call sites would not normally produce a
 fully empty row because the icu wellness endpoint always returns at
 least one field per emitted day.
+
+---
+
+## C13 — DSL distance vs duration disambiguation for "Nm"
+
+**Status:** call made, may need adjustment if athletes write track sets.
+
+The DSL spec lists `400m` (metres) and `5m` (minutes) as both valid
+amounts. To resolve ambiguity, `internal/workoutdsl.parseAmount` uses a
+threshold: a bare `Nm` token is treated as **metres** when `N >= 50` and
+as **minutes** otherwise.
+
+Edge cases this is wrong on:
+- A 50-minute step would have to be written as `50m` and would parse as
+  50 metres. Workaround: use `1h` or `49m` + `1m`. Realistically zero
+  athletes write 50-minute single steps.
+- Very short track repeats (`30m` sprints) would parse as 30 minutes.
+  Use the explicit `30m` only if you mean minutes, otherwise add a
+  unit (we may extend the grammar with `Nmtr` or require `400m` always
+  be inside a repeat).
+
+If this causes pain in real use, the cleanest fix is: require explicit
+unit (`min`/`sec`/`hr` for duration; `m`/`km`/`y` only for distance) and
+deprecate the bare suffix collision. That's a v2 break.

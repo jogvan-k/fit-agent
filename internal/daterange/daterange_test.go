@@ -94,7 +94,7 @@ func TestParseConflicts(t *testing.T) {
 	now := date(2026, 5, 15, madrid)
 	cases := []Inputs{
 		{Since: "7d", From: "2026-04-01"},
-		{To: "2026-04-30"}, // To without From
+		{To: "2026-04-30"},                     // To without From
 		{From: "2026-04-30", To: "2026-04-01"}, // From > To
 	}
 	for i, in := range cases {

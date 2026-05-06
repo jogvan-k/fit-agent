@@ -878,13 +878,13 @@ dependencies.
 - [x] Idempotency tests: run twice → second run reports zero changes
 
 ### M7 — `internal/workoutdsl`
-- [ ] Tokenizer + parser for the `fit-workout` DSL (durations, zones, reps, ramps, free-text)
-- [ ] AST → intervals.icu workout-description string
-- [ ] Round-trip property test for the supported subset
-- [ ] Fixture tests: known DSL → expected icu description
-- [ ] Validation errors with line/column pointers
-- [ ] `fit-agent workout parse|render|lint <path|->` CLI helpers
-- [ ] Document supported syntax in `workout-builder/SKILL.md` template
+- [x] Tokenizer + parser for the `fit-workout` DSL (durations, zones, reps, ramps, free-text)
+- [x] AST → intervals.icu workout-description string
+- [x] Round-trip property test for the supported subset
+- [x] Fixture tests: known DSL → expected icu description
+- [x] Validation errors with line/column pointers
+- [x] `fit-agent workout parse|render|lint <path|->` CLI helpers
+- [x] Document supported syntax in `workout-builder/SKILL.md` template
 
 ### M8 — `push-workouts` command
 - [ ] Read all `planned-workouts/*.md` in range, parse frontmatter + DSL fences
