@@ -1,5 +1,7 @@
 package icu
 
+import "encoding/json"
+
 // Athlete is the subset of /athlete/{id} we currently consume.
 //
 // intervals.icu returns ~50 fields here; we keep types loose (json.Number
@@ -95,5 +97,11 @@ type Event struct {
 	Type           string `json:"type,omitempty"`
 	MovingTime     int    `json:"moving_time,omitempty"`
 	IndoorOutdoor  string `json:"indoor,omitempty"`
-	WorkoutDoc     string `json:"workout_doc,omitempty"`
+	// WorkoutDoc is intervals.icu's structured workout representation.
+	// Historically the API returned a string; in 2026 the field became a
+	// JSON object ({"steps":[...]}). We keep it as raw JSON so decoding
+	// tolerates both shapes; callers that need to interpret it should
+	// unmarshal further. The CLI does not generate this field — it
+	// pushes the DSL via [Event.Description] only.
+	WorkoutDoc json.RawMessage `json:"workout_doc,omitempty"`
 }

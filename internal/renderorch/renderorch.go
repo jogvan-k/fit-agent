@@ -266,7 +266,7 @@ func Planned(ctx context.Context, c Context, r daterange.Range) (Stats, error) {
 			Date: date,
 			Workouts: []render.PlannedWorkout{{
 				Event:   ev,
-				DSLBody: ev.WorkoutDoc,
+				DSLBody: ev.Description,
 			}},
 		})
 		if err != nil {

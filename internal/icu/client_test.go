@@ -306,6 +306,47 @@ func TestUpdateEventRequiresID(t *testing.T) {
 	}
 }
 
+// TestCreateEventDecodesObjectWorkoutDoc is a regression test for
+// https://github.com/jogvan-k/fit-agent/issues/1: intervals.icu changed
+// `workout_doc` from a string to an object, which used to break decoding
+// even though the event was successfully created server-side.
+func TestCreateEventDecodesObjectWorkoutDoc(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"id":99,"start_date_local":"2026-05-11T00:00:00","category":"WORKOUT","name":"Easy","workout_doc":{"steps":[{"duration":600,"power":"Z2"}]}}`)
+	})
+	c, _ := newTestClient(t, h)
+	ev, err := c.CreateEvent(context.Background(), "i1", Event{Name: "Easy", Category: EventCategoryWorkout, StartDateLocal: "2026-05-11T00:00:00"})
+	if err != nil {
+		t.Fatalf("CreateEvent: %v", err)
+	}
+	if ev.ID != 99 {
+		t.Errorf("ID = %d, want 99", ev.ID)
+	}
+	if len(ev.WorkoutDoc) == 0 || ev.WorkoutDoc[0] != '{' {
+		t.Errorf("WorkoutDoc = %q, want JSON object", string(ev.WorkoutDoc))
+	}
+}
+
+// TestCreateEventDecodesStringWorkoutDoc keeps the legacy string shape
+// working too, in case intervals.icu ever falls back to it for some
+// endpoints.
+func TestCreateEventDecodesStringWorkoutDoc(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"id":100,"start_date_local":"2026-05-11T00:00:00","category":"WORKOUT","name":"Easy","workout_doc":"- 10m Z2"}`)
+	})
+	c, _ := newTestClient(t, h)
+	ev, err := c.CreateEvent(context.Background(), "i1", Event{Name: "Easy", Category: EventCategoryWorkout, StartDateLocal: "2026-05-11T00:00:00"})
+	if err != nil {
+		t.Fatalf("CreateEvent: %v", err)
+	}
+	if ev.ID != 100 {
+		t.Errorf("ID = %d, want 100", ev.ID)
+	}
+	if string(ev.WorkoutDoc) != `"- 10m Z2"` {
+		t.Errorf("WorkoutDoc = %q, want quoted string", string(ev.WorkoutDoc))
+	}
+}
+
 func TestParseRetryAfter(t *testing.T) {
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	cases := []struct {
