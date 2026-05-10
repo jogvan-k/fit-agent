@@ -247,16 +247,19 @@ func Planned(ctx context.Context, c Context, r daterange.Range) (Stats, error) {
 		data, err := os.ReadFile(p)
 		if err != nil {
 			stats.Errors++
+			c.logf("planned %s: read: %v", filepath.Base(p), err)
 			continue
 		}
 		var ev icu.Event
 		if err := json.Unmarshal(data, &ev); err != nil {
 			stats.Errors++
+			c.logf("planned %s: decode: %v", filepath.Base(p), err)
 			continue
 		}
 		date, err := parseLocalDate(ev.StartDateLocal, c.Location)
 		if err != nil {
 			stats.Errors++
+			c.logf("planned %s: parse start_date_local %q: %v", filepath.Base(p), ev.StartDateLocal, err)
 			continue
 		}
 		if date.Before(r.OldestT) || date.After(r.NewestT) {
@@ -271,11 +274,13 @@ func Planned(ctx context.Context, c Context, r daterange.Range) (Stats, error) {
 		})
 		if err != nil {
 			stats.Errors++
+			c.logf("planned %s: render: %v", filepath.Base(p), err)
 			continue
 		}
 		out, err := writeRenderedNoOverwrite(c.Layout.PlannedWorkoutDayPath(date), body, c.DryRun)
 		if err != nil {
 			stats.Errors++
+			c.logf("planned %s: write: %v", filepath.Base(p), err)
 			continue
 		}
 		stats.Add(out)
