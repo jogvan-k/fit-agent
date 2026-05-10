@@ -62,6 +62,9 @@ func TestLayoutDatedPaths(t *testing.T) {
 	if got, want := l.PlannedWorkoutDayPath(d), "/ws/fit-agent/planned-workouts/2026-05-03.md"; got != want {
 		t.Errorf("PlannedWorkoutDayPath = %q, want %q", got, want)
 	}
+	if got, want := l.PulledWorkoutDayPath(d, "i999"), "/ws/fit-agent/planned-workouts/2026-05-03.i999.icu.md"; got != want {
+		t.Errorf("PulledWorkoutDayPath = %q, want %q", got, want)
+	}
 	if got, want := l.CacheActivityJSONPath("i12345"), "/ws/fit-agent/.cache/activities/i12345.json"; got != want {
 		t.Errorf("CacheActivityJSONPath = %q, want %q", got, want)
 	}
@@ -161,6 +164,7 @@ func TestClassify(t *testing.T) {
 		{"/ws/fit-agent/.cache/activities/i1.json", OwnerMachine},
 		{"/ws/fit-agent/.cache/athlete.json", OwnerMachine},
 		{"/ws/fit-agent/planned-workouts/2026-05-04.md", OwnerShared},
+		{"/ws/fit-agent/planned-workouts/2026-05-04.i999.icu.md", OwnerMachine},
 		{"/ws/ATHLETE-PROFILE.md", OwnerAgent},
 		{"/ws/TRAINING-PLAN.md", OwnerAgent},
 		{"/ws/README.md", OwnerAgent},

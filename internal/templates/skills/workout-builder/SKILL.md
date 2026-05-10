@@ -1,6 +1,6 @@
 ---
 name: workout-builder
-description: Translates the macro plan in TRAINING-PLAN.md into concrete daily workouts in fit-agent/planned-workouts/YYYY-MM-DD.md, using the fit-workout DSL, and pushes them to intervals.icu via `fit-agent push-workouts`. Use when the athlete asks to schedule the next N days of training, when a planned workout needs adjustment, or after the training-plan-coach updates TRAINING-PLAN.md.
+description: Translates the macro plan in TRAINING-PLAN.md into concrete daily workouts in fit-agent/planned-workouts/YYYY-MM-DD.md, using the fit-workout DSL, and syncs them with intervals.icu via `fit-agent sync-workouts`. Use when the athlete asks to schedule the next N days of training, when a planned workout needs adjustment, or after the training-plan-coach updates TRAINING-PLAN.md.
 ---
 
 # Workout builder
@@ -8,7 +8,29 @@ description: Translates the macro plan in TRAINING-PLAN.md into concrete daily w
 You write executable workouts. Your output is one markdown file per day
 under `fit-agent/planned-workouts/YYYY-MM-DD.md`, each carrying a
 fenced ` ```fit-workout ` block in the DSL described below. After
-writing, you run `fit-agent push-workouts` to sync to intervals.icu.
+writing, you run `fit-agent sync-workouts` to two-way sync with
+intervals.icu.
+
+## Two kinds of files in `planned-workouts/`
+
+The directory contains two kinds of markdown files. The suffix tells
+them apart:
+
+- `YYYY-MM-DD.md` — **agent-authored, writeable.** You create and edit
+  these. They carry the structured `fit-workout` DSL and are the
+  source pushed to intervals.icu.
+- `YYYY-MM-DD.<icu-id>.icu.md` — **read-only, machine-owned mirror.**
+  These are workouts that already exist on intervals.icu (authored on
+  the icu web/app, by another device, or by an earlier sync). Treat
+  them as inputs, not outputs. `sync-workouts` regenerates them on
+  every run; any edits you make to them are lost.
+
+If you want to take ownership of a workout that currently exists only
+as an `.icu.md` mirror, copy its contents into a new
+`YYYY-MM-DD.md`, set `icu_event_id` in the frontmatter to the same id
+the mirror used, and delete the `.icu.md` file. The next
+`sync-workouts` will see the local file as the source of truth and
+PUT updates to the same icu event.
 
 ## Inputs you read
 
@@ -17,12 +39,14 @@ writing, you run `fit-agent push-workouts` to sync to intervals.icu.
   like. If it is missing, ask the user to run the training-plan-coach
   skill first.
 - `ATHLETE-PROFILE.md` — for zone definitions, FTP, threshold pace.
-- Existing `fit-agent/planned-workouts/*.md` — to know what is already
-  on the calendar.
+- Existing `fit-agent/planned-workouts/*.md` — your prior authored
+  files, to know what is already on the calendar.
+- Existing `fit-agent/planned-workouts/*.icu.md` — read-only mirrors
+  of icu-side workouts. Use these to avoid double-booking a day.
 
 ## Outputs you produce
 
-One markdown file per day. Format:
+One agent-authored markdown file per day. Format:
 
 ```markdown
 ---
@@ -33,7 +57,7 @@ workouts:
   - name: "Z2 Endurance"
     type: Ride
     moving_time_s: 4500
-    icu_event_id: null     # filled in after first push
+    icu_event_id: null     # filled in after first sync
 ---
 
 ## Z2 Endurance
@@ -102,30 +126,36 @@ becomes a step note that intervals.icu shows in the workout viewer:
 When the athlete asks "schedule the next two weeks":
 
 1. Read `TRAINING-PLAN.md`. Identify the current week's structure.
-2. Read existing `fit-agent/planned-workouts/*.md` for the date
-   range. Skip dates that already have a planned workout unless the
-   user asks you to overwrite.
-3. For each new date, write the markdown file.
-4. Run `fit-agent push-workouts --dry-run` and show the diff.
-5. Ask for confirmation, then run `fit-agent push-workouts`.
+2. Read existing `fit-agent/planned-workouts/*.md` and `*.icu.md`
+   for the date range. Skip dates that already have a workout
+   (either authored or pulled from icu) unless the user asks to
+   overwrite.
+3. For each new date, write the agent-authored markdown file
+   (`YYYY-MM-DD.md`).
+4. Run `fit-agent sync-workouts --dry-run` and show the diff.
+5. Ask for confirmation, then run `fit-agent sync-workouts`.
 
 When the athlete asks to swap a session:
 
-1. Edit the markdown file for the affected date. Keep the same
-   `icu_event_id` so push will `PUT` an update rather than create a
+1. If the day currently exists as an `.icu.md` mirror only, first
+   create an agent-authored `YYYY-MM-DD.md` that takes ownership of
+   the same `icu_event_id` (then delete the mirror).
+2. Edit the agent-authored markdown file. Keep the same
+   `icu_event_id` so sync will `PUT` an update rather than create a
    new event.
-2. Run `fit-agent push-workouts --dry-run` to confirm.
-3. Run `fit-agent push-workouts`.
+3. Run `fit-agent sync-workouts --dry-run` to confirm.
+4. Run `fit-agent sync-workouts`.
 
-To remove a planned workout entirely, delete it from the markdown and
-run `fit-agent push-workouts --prune`. Without `--prune`, push refuses
-to delete events that exist on icu but not in markdown.
+To remove a planned workout entirely, delete the agent-authored file
+and run `fit-agent sync-workouts --prune`. Without `--prune`, sync
+refuses to delete events that exist on icu but not in markdown.
 
 ## Don'ts
 
+- Do not edit `*.icu.md` files. They are regenerated on every sync.
 - Do not invent zones the athlete has not provided. If FTP is
   missing, fall back to RPE/heart-rate language and say so.
 - Do not write to `fit-agent/activities/*.yaml` or
   `fit-agent/wellness/*.yaml` — those are machine-owned.
-- Do not run `fit-agent push-workouts` without showing the dry-run
+- Do not run `fit-agent sync-workouts` without showing the dry-run
   first.

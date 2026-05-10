@@ -15,12 +15,16 @@ func newPushWorkoutsCmd() *cobra.Command {
 	)
 	cmd := &cobra.Command{
 		Use:   "push-workouts",
-		Short: "Push planned workouts from markdown to intervals.icu",
-		Long: `push-workouts reads every planned-workouts/*.md file whose date
-is in the requested range, parses the YAML frontmatter and the
-` + "```fit-workout```" + ` DSL fence, diffs each entry against the cached
-.cache/events/*.json snapshot, and applies the resulting create / update
-/ delete actions to intervals.icu.
+		Short: "Deprecated: push-only half of sync-workouts",
+		Long: `push-workouts is retained for backward compatibility and runs the
+push half of ` + "`sync-workouts`" + ` only: it diffs every
+planned-workouts/*.md file against the cached .cache/events/*.json
+snapshot and applies create / update / delete actions to intervals.icu.
+
+Prefer ` + "`fit-agent sync-workouts`" + `, which additionally pulls
+events authored on intervals.icu (or by other devices) and materialises
+them as read-only ` + "`*.icu.md`" + ` files in the planned-workouts
+directory so the agent can see them.
 
 Run ` + "`fit-agent cache events`" + ` (or ` + "`fit-agent fetch`" + `) first so that
 the diff sees the current calendar state. Server-assigned event IDs are
@@ -30,6 +34,7 @@ pushes can issue PUT updates rather than recreate.
 By default events that exist on intervals.icu but no longer appear in
 the markdown are reported as 'skip' (cache-only event). Pass --prune to
 DELETE them.`,
+		Deprecated: "use `fit-agent sync-workouts` instead (it runs push then pull).",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			res, dryRun, err := resolveRuntime(cmd)
 			if err != nil {

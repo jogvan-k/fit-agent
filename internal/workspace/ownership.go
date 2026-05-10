@@ -121,19 +121,22 @@ func (l Layout) relPath(path string) (string, bool) {
 // classifyRel returns the owner for a workspace-relative slash path.
 //
 // Rules (longest-prefix first):
-//   - fit-agent/.cache/**            machine
-//   - fit-agent/planned-workouts/**  shared
-//   - fit-agent/activities/**        machine
-//   - fit-agent/wellness/**          machine
-//   - skills/**                      agent
-//   - ATHLETE-PROFILE.md             agent
-//   - TRAINING-PLAN.md               agent
-//   - README.md                      agent
-//   - .fit-agent.toml                agent (init only; not touched by fetch)
-//   - everything else                unknown
+//   - fit-agent/.cache/**                         machine
+//   - fit-agent/planned-workouts/**.icu.md        machine (pulled from icu)
+//   - fit-agent/planned-workouts/**               shared
+//   - fit-agent/activities/**                     machine
+//   - fit-agent/wellness/**                       machine
+//   - skills/**                                   agent
+//   - ATHLETE-PROFILE.md                          agent
+//   - TRAINING-PLAN.md                            agent
+//   - README.md                                   agent
+//   - .fit-agent.toml                             agent (init only; not touched by fetch)
+//   - everything else                             unknown
 func classifyRel(rel string) Owner {
 	switch {
 	case strings.HasPrefix(rel, "fit-agent/.cache/") || rel == "fit-agent/.cache":
+		return OwnerMachine
+	case strings.HasPrefix(rel, "fit-agent/planned-workouts/") && strings.HasSuffix(rel, ".icu.md"):
 		return OwnerMachine
 	case strings.HasPrefix(rel, "fit-agent/planned-workouts/") || rel == "fit-agent/planned-workouts":
 		return OwnerShared

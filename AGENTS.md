@@ -19,11 +19,12 @@ task checklist.
 - **The CLI never calls an LLM.** It is invoked *by* an agent. Do not add
   LLM SDKs or prompts to the CLI itself. Coaching prompts live in
   `internal/templates/skills/`.
-- **The workspace has owners.** Some files are agent-owned
+- The workspace has owners. Some files are agent-owned
   (`ATHLETE-PROFILE.md`, `TRAINING-PLAN.md`, `skills/**`,
   `planned-workouts/*.md`); some are machine-owned (`activities/*.yaml`,
-  `wellness/*.yaml`, `.cache/**`). Code that writes to the workspace must
-  respect the ownership table in `agent-plan.md` §4.
+  `wellness/*.yaml`, `planned-workouts/*.icu.md`, `.cache/**`). Code
+  that writes to the workspace must respect the ownership table in
+  `agent-plan.md` §4.
 - **Agent-owned files are never overwritten** by `fetch`. If you find
   yourself wanting to, stop — the design is wrong.
 - **`.cache/` is the source of truth.** Agent-facing YAML/markdown can
@@ -56,7 +57,8 @@ them. We don't have external consumers in v1.
 - `fit-agent fetch` is the convenience wrapper. Internally it is
   `cache all` followed by `render all`.
 - Atomic subcommands exist for debugging and for the agent:
-  `cache`, `render`, `fit`, `workout`, `push-workouts`. See §8 of the plan.
+  `cache`, `render`, `fit`, `workout`, `sync-workouts` (push then pull),
+  and the legacy push-only `push-workouts`. See §8 of the plan.
 - Every command that mutates state must support `--dry-run`.
 
 ## Data formats
@@ -66,11 +68,15 @@ them. We don't have external consumers in v1.
 | `activities/YYYY-MM-DD.yaml` | YAML, multi-doc, one per activity | machine |
 | `wellness/YYYY-MM.yaml` | YAML, map by date | machine |
 | `planned-workouts/YYYY-MM-DD.md` | markdown + ```fit-workout``` fence | shared |
+| `planned-workouts/YYYY-MM-DD.<id>.icu.md` | markdown (read-only mirror) | machine |
 | `ATHLETE-PROFILE.md`, `TRAINING-PLAN.md`, `README.md`, `skills/**/SKILL.md` | markdown | agent |
 | `.cache/**` | raw icu JSON + raw FIT bytes | machine |
 
 YAML data files always start with a header comment describing units and
 the path to the corresponding cache file. Don't drop the header.
+
+## Intervals.icu integration
+A best practice on integrating with Intervals.icu is found at https://forum.intervals.icu/t/intervals-icu-api-integration-cookbook/80090
 
 ## Build & test
 

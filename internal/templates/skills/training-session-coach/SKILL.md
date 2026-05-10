@@ -16,7 +16,10 @@ training-plan-coach's job).
   sleep duration and quality, ramp rate, CTL/ATL.
 - `fit-agent/activities/*.yaml` for the last 7 days — perceived
   exertion, completed vs planned, signs of accumulated fatigue.
-- `fit-agent/planned-workouts/<today>.md` — what is on the calendar.
+- `fit-agent/planned-workouts/<today>.md` — what is on the calendar
+  (agent-authored). Read-only mirrors of icu-authored workouts also
+  live here as `<today>.<id>.icu.md` files; treat those as input
+  only.
 - `TRAINING-PLAN.md` — the broader context. Where in the plan is the
   athlete (build vs taper)?
 
@@ -55,7 +58,7 @@ recent baseline, not from absolute numbers.
 Address the athlete directly. Recommend ONE option. Show the
 reasoning in 2–3 bullet points referencing the data you read. End
 with a concrete next step ("If you agree, I will rewrite today's
-planned workout to … and push it via `fit-agent push-workouts`").
+planned workout to … and push it via `fit-agent sync-workouts`").
 
 If you recommend Swap or Hold and the athlete agrees, ask the
 workout-builder skill to rewrite the day's planned-workout markdown

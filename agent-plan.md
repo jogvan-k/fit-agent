@@ -19,7 +19,8 @@ This plan covers v1 only, with hooks for the post-v1 webhook service.
 
 ### v1 goals
 - One self-contained binary (`fit-agent`) installable via `go install`.
-- Three commands: `init`, `fetch`, `push-workouts`.
+- Three commands: `init`, `fetch`, `sync-workouts` (with `push-workouts`
+  retained as a deprecated push-only alias).
 - A workspace that is human-, agent-, and OpenClaw-friendly. Narrative
   files are markdown; regenerated-on-fetch data files (activities,
   wellness) are commented YAML — see §10 for the rationale.
@@ -182,7 +183,7 @@ fit-agent/
 
 ### Ownership rules
 
-| Path | Owner | Touched by `fetch` | Touched by `push-workouts` |
+| Path | Owner | Touched by `fetch` | Touched by `sync-workouts` |
 |------|-------|--------------------|----------------------------|
 | `ATHLETE-PROFILE.md` | agent | never | never |
 | `TRAINING-PLAN.md` | agent | never | never |
@@ -190,7 +191,8 @@ fit-agent/
 | `skills/**/SKILL.md` | agent (after init) | never | never |
 | `fit-agent/wellness/*.yaml` | machine | yes (upsert by date) | no |
 | `fit-agent/activities/*.yaml` | machine | yes (full rewrite) | no |
-| `fit-agent/planned-workouts/*.md` | shared | yes (regenerate from icu) | yes (writes back ids) |
+| `fit-agent/planned-workouts/YYYY-MM-DD.md` | shared | yes (regenerate from icu) | yes (writes back ids) |
+| `fit-agent/planned-workouts/YYYY-MM-DD.<id>.icu.md` | machine | no | yes (regenerated; pruned when icu deletes the event) |
 | `fit-agent/.cache/**` | machine | yes | yes |
 
 ### File anatomy (machine-owned files)
@@ -461,14 +463,23 @@ fit-agent fetch [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--since 30d]
 - `--dry-run` prints diffs without writing.
 - Summary output: `wellness +12, activities +5 (~2 changed), planned +3`.
 
-### 8.3 `fit-agent push-workouts`
+### 8.3 `fit-agent sync-workouts`
 
 ```
-fit-agent push-workouts [--from YYYY-MM-DD] [--to YYYY-MM-DD]
+fit-agent sync-workouts [--from YYYY-MM-DD] [--to YYYY-MM-DD]
                         [--prune] [--dry-run] [--profile NAME]
 ```
 
-- Reads `planned-workouts/YYYY-MM-DD.md` files in range.
+`sync-workouts` is the agent's primary workout-calendar command. It is
+two-way: push first, then pull, so workouts the agent just authored come
+back from the pull with their server-assigned id stamped into the
+locally-authored file.
+
+#### Push half (identical to the legacy `push-workouts`)
+
+- Reads `planned-workouts/YYYY-MM-DD.md` files in range (the
+  agent-authored files, identified by the `.md` suffix; `*.icu.md`
+  mirror files are ignored).
 - Each file may declare 0..N workouts. Schema:
   ```markdown
   ---
@@ -500,6 +511,32 @@ fit-agent push-workouts [--from YYYY-MM-DD] [--to YYYY-MM-DD]
   teaches the agent the supported syntax.
 - `--dry-run` prints the diff that *would* be sent, with the converted
   intervals.icu description.
+
+#### Pull half
+
+- After push, every WORKOUT-category event in range is fetched fresh from
+  intervals.icu.
+- Events that are owned by a locally-authored markdown file (matched by
+  stamped `icu_event_id`, or by `(date, name)` when no id is stamped)
+  are skipped — the local file is the source of truth.
+- All other events are materialised as **read-only** mirror files at
+  `fit-agent/planned-workouts/YYYY-MM-DD.<id>.icu.md`. The format is
+  intentionally distinct from the agent-authored `.md` files:
+  - Frontmatter `kind: pulled-workout-day`, `read_only: true`,
+    `source: intervals.icu`, plus a single `workout:` block with the
+    icu metadata.
+  - The body contains the original `Event.Description` verbatim in a
+    plain fenced block — the renderer does not attempt to round-trip
+    it back into the `fit-workout` DSL.
+- `.cache/events/<id>.json` is refreshed to mirror the live response.
+- Any pre-existing `*.icu.md` whose icu event has been deleted (no
+  longer returned by the list call for that range) is removed.
+
+#### Backwards compatibility
+
+- `fit-agent push-workouts` is retained as a hidden / deprecated alias
+  that runs the push half only, so existing scripts and skill prompts
+  keep working. New skills and docs target `sync-workouts`.
 
 ### 8.4 Atomic subcommands (debug & inspection)
 
@@ -639,7 +676,7 @@ training-plan-coach  →  TRAINING-PLAN.md  →  workout-builder  →  planned-w
     `fit-agent/planned-workouts/*.md` to know what is already scheduled,
   - generate / regenerate the next N days of planned workouts,
   - adapt individual sessions on user request (skip, swap, shorten),
-  - run **`fit-agent push-workouts`** to push new or changed workouts to
+  - run **`fit-agent sync-workouts`** to push new or changed workouts to
     intervals.icu. The skill documents `--dry-run` and `--prune`.
 
 - **`training-session-coach/SKILL.md`** — Day-of guidance. Reads recent
@@ -708,8 +745,12 @@ Markdown is kept for files where prose matters and the agent edits them:
 - `.cache/` is the ultimate source of truth — YAML can be rebuilt from
   cache without re-fetching (`fit-agent render` is a candidate post-v1
   helper).
-- `push-workouts` only ever touches `fit-agent/planned-workouts/*.md` (to
-  back-fill `icu_event_id`) and `.cache/events/*.json`.
+- `sync-workouts` is the only command that pushes to icu. Its push half
+  touches `fit-agent/planned-workouts/*.md` (to back-fill `icu_event_id`)
+  and `.cache/events/*.json`; its pull half writes
+  `fit-agent/planned-workouts/*.icu.md` and refreshes
+  `.cache/events/*.json`. The deprecated `push-workouts` alias only runs
+  the push half.
 
 ---
 
@@ -745,11 +786,18 @@ Markdown is kept for files where prose matters and the agent edits them:
 | M5 | `init` command end-to-end | scaffolds a real workspace incl. skill templates |
 | M6 | `fetch` command (activities + wellness + planned, with cache) | idempotent across reruns |
 | M7 | `internal/workoutdsl` + `WORKOUT-BUILDER.md` reference | round-trip tests green |
-| M8 | `push-workouts` command | create/update/delete against icu |
+| M8 | `sync-workouts` command (push then pull) | create/update/delete against icu + read-only `.icu.md` mirrors |
 | M9 | Polish: rate-limits, `--dry-run` everywhere, error messages, docs | v1.0.0 release |
 
 Post-v1:
-- M10 webhook receiver service (`fit-agent serve`) with public-URL story.
+- M10 polling daemon (`fit-agent serve` + `setup-service` / `remove-service`
+  systemd-user wrappers). Webhooks were dropped: intervals.icu webhooks
+  require an OAuth app and a public URL, neither of which fits the
+  single-user, on-laptop deployment model. A polite 15-minute poll over
+  `--since 2d` issues ~1-2 requests per minute against icu's 30 req/s
+  ceiling and refreshes well before icu's own 60-second `ACTIVITY_ANALYZED`
+  delay matters. **Status: shipped** (`internal/serveorch`,
+  `internal/systemdunit`, `internal/cli/{serve,setup_service,remove_service}.go`).
 - M11 OpenClaw webhook integration to notify the agent of new data.
 - M12 Authored coaching prompts (replaces the TODO skeletons).
 
@@ -886,7 +934,7 @@ dependencies.
 - [x] `fit-agent workout parse|render|lint <path|->` CLI helpers
 - [x] Document supported syntax in `workout-builder/SKILL.md` template
 
-### M8 — `push-workouts` command
+### M8 — `sync-workouts` command
 - [x] Read all `planned-workouts/*.md` in range, parse frontmatter + DSL fences
 - [x] Diff against `.cache/events/*.json`
 - [x] `POST` for new (`icu_event_id == null`)
@@ -895,6 +943,9 @@ dependencies.
 - [x] Write returned `icu_event_id` back into the markdown frontmatter
 - [x] `--dry-run` prints the icu description that would be sent
 - [x] End-to-end test against fake icu server (create → modify → delete)
+- [x] Pull half: list events from icu and render read-only `*.icu.md` files for events not authored locally
+- [x] Prune stale `*.icu.md` files when their icu event no longer exists in range
+- [x] `push-workouts` retained as deprecated alias for the push half only
 
 ### M9 — Polish & release
 - [ ] Coherent error messages (file path + actionable suggestion)
@@ -902,7 +953,7 @@ dependencies.
 - [ ] `--verbose` / `--quiet` flags wired through
 - [ ] Version stamping via `-ldflags` on release build
 - [ ] `goreleaser` config for cross-compiled binaries
-- [ ] `README.md`: install, `init`, `fetch`, `push-workouts`, examples
+- [ ] `README.md`: install, `init`, `fetch`, `sync-workouts`, examples
 - [ ] `docs/workspace.md`: ownership rules, file formats, units
 - [ ] `docs/workout-dsl.md`: DSL reference (mirrors the skill template)
 - [ ] CI: tag-driven release workflow

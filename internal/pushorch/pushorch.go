@@ -108,6 +108,14 @@ func Plan(ctx context.Context, c Context, r daterange.Range) ([]Action, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Index ids that are owned by icu-side mirror files (`*.icu.md`).
+	// These were materialised by the pull half of `sync-workouts` and
+	// must NOT be treated as cache-only events to delete: they have no
+	// agent-authored markdown by design.
+	mirroredIDs, err := readPulledMirrorIDs(c.Layout.PlannedWorkoutsDir(), r)
+	if err != nil {
+		return nil, err
+	}
 	// Index cached events by id and by (date, name).
 	byID := map[int64]*icu.Event{}
 	byKey := map[string]*icu.Event{}
@@ -174,6 +182,11 @@ func Plan(ctx context.Context, c Context, r daterange.Range) ([]Action, error) {
 	// without --prune).
 	for _, ev := range cached {
 		if seenID[ev.ID] {
+			continue
+		}
+		if mirroredIDs[ev.ID] {
+			// Owned by an `.icu.md` mirror; never delete from the
+			// push side.
 			continue
 		}
 		kind := ActionSkip
@@ -295,6 +308,12 @@ func readPlannedDays(dir string, r daterange.Range) ([]*plannedio.Day, error) {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
 			continue
 		}
+		// Skip read-only icu mirrors (`*.icu.md`); they are owned by
+		// the pull half of `sync-workouts` and use a different
+		// frontmatter kind.
+		if strings.HasSuffix(e.Name(), ".icu.md") {
+			continue
+		}
 		path := filepath.Join(dir, e.Name())
 		day, err := plannedio.ReadDay(path)
 		if err != nil {
@@ -310,6 +329,45 @@ func readPlannedDays(dir string, r daterange.Range) ([]*plannedio.Day, error) {
 	}
 	sort.Slice(days, func(i, j int) bool { return days[i].Date < days[j].Date })
 	return days, nil
+}
+
+// readPulledMirrorIDs scans planned-workouts/ for `*.icu.md` files
+// whose date is in range and returns the set of icu event ids
+// embedded in their filenames. These ids are owned by the pull half
+// of `sync-workouts` and must not be diff'd against agent-authored
+// markdown.
+func readPulledMirrorIDs(dir string, r daterange.Range) (map[int64]bool, error) {
+	ids := map[int64]bool{}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ids, nil
+		}
+		return nil, fmt.Errorf("read planned-workouts dir: %w", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if !strings.HasSuffix(name, ".icu.md") {
+			continue
+		}
+		stem := strings.TrimSuffix(name, ".icu.md")
+		if len(stem) < 12 || stem[10] != '.' {
+			continue
+		}
+		date := stem[:10]
+		if !inRange(date, r) {
+			continue
+		}
+		var id int64
+		if _, err := fmt.Sscanf(stem[11:], "%d", &id); err != nil || id == 0 {
+			continue
+		}
+		ids[id] = true
+	}
+	return ids, nil
 }
 
 // readCachedEvents reads every .cache/events/*.json file falling in the

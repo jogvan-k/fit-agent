@@ -95,9 +95,22 @@ func (l Layout) WellnessMonthPath(month time.Time) string {
 }
 
 // PlannedWorkoutDayPath returns the markdown path for a planned-workout
-// day.
+// day. This file is shared-ownership: the agent authors it and
+// sync-workouts stamps icu_event_id back into it after a successful push.
 func (l Layout) PlannedWorkoutDayPath(date time.Time) string {
 	return filepath.Join(l.PlannedWorkoutsDir(), date.Format("2006-01-02")+".md")
+}
+
+// PulledWorkoutDayPath returns the markdown path used to materialise an
+// intervals.icu-authored workout that the agent did not author locally.
+//
+// These files share the planned-workouts/ directory but use the
+// `.icu.md` suffix so they are visually and programmatically
+// distinguishable from agent-authored `.md` files. They are
+// machine-owned: regenerated on every `fit-agent sync-workouts` and
+// never edited by the agent.
+func (l Layout) PulledWorkoutDayPath(date time.Time, icuID string) string {
+	return filepath.Join(l.PlannedWorkoutsDir(), date.Format("2006-01-02")+"."+icuID+".icu.md")
 }
 
 // CacheActivityJSONPath returns the cache path for an activity's raw

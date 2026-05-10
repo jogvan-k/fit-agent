@@ -45,7 +45,8 @@ my-coaching/
 └── fit-agent/
     ├── activities/2026-05-03.yaml      # today's session(s), with laps
     ├── wellness/2026-05.yaml           # the month's daily wellness
-    ├── planned-workouts/2026-05-04.md  # tomorrow's workout
+    ├── planned-workouts/2026-05-04.md         # agent-authored workout
+    ├── planned-workouts/2026-05-06.4711.icu.md # read-only mirror of an icu-side workout
     └── .cache/                          # raw icu JSON + .fit files
 ```
 
@@ -54,7 +55,10 @@ my-coaching/
 ```sh
 fit-agent init                    # one-time setup; scaffolds the workspace
 fit-agent fetch --since 30d       # pull activities + wellness + planned
-fit-agent push-workouts           # push planned workouts back to intervals.icu
+fit-agent sync-workouts           # push agent-authored workouts and pull icu-side ones
+fit-agent serve                   # poll intervals.icu on a cadence (daemon)
+fit-agent setup-service           # install ~/.config/systemd/user/fit-agent.service
+fit-agent remove-service          # tear it down again
 ```
 
 Plus atomic subcommands for debugging and agent use:
@@ -75,7 +79,10 @@ fit-agent workout render <file>   # convert the fit-workout DSL
 3. The **training-plan coach** skill walks you through goals and
    methodology, then writes `TRAINING-PLAN.md`.
 4. The **workout-builder** skill turns the plan into concrete daily
-   workouts under `planned-workouts/` and runs `fit-agent push-workouts`.
+   workouts under `planned-workouts/` and runs `fit-agent sync-workouts`,
+   which pushes new files to intervals.icu and pulls back any workouts
+   authored on icu (or by another device) as read-only `.icu.md`
+   mirrors.
 5. The **training-session coach** skill checks today's wellness against
    today's planned workout and recommends adjustments before you train.
 
@@ -84,7 +91,9 @@ The CLI never calls an LLM. The agent calls the CLI.
 ## Roadmap
 
 - **v1** — three commands, intervals.icu only, manual `fetch`.
-- **post-v1** — `fit-agent serve` for intervals.icu webhooks, OpenClaw
+- **post-v1** — `fit-agent serve` polls intervals.icu on a cadence
+  (15 min default, quiet-hours aware), wrapped by `setup-service` /
+  `remove-service` for systemd-user installation. OpenClaw
   webhook integration so the agent is notified the moment new data lands,
   and full coaching prompts in the bundled skills.
 
