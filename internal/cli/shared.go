@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -104,13 +103,4 @@ func stdoutOrStderrForResults(cmd *cobra.Command) io.Writer {
 		return io.Discard
 	}
 	return cmd.OutOrStdout()
-}
-
-// must is a small helper for one-line panics on programmer errors in
-// flag wiring (never used for user-facing errors).
-func must(err error) {
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
 }

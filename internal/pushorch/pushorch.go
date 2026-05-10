@@ -58,11 +58,20 @@ func (c Context) logf(format string, args ...any) {
 type ActionKind int
 
 const (
+	// ActionCreate creates a new event on intervals.icu from a local
+	// workout that has no icu_event_id stamp.
 	ActionCreate ActionKind = iota + 1
+	// ActionUpdate updates an existing icu event whose body has drifted.
 	ActionUpdate
+	// ActionDelete deletes an icu event with no corresponding local
+	// workout (only when --prune is set).
 	ActionDelete
+	// ActionUnchanged reports an event whose body matches the local
+	// workout exactly.
 	ActionUnchanged
-	ActionSkip // would delete but --prune not set
+	// ActionSkip reports an icu event that would be deleted but --prune
+	// is not set.
+	ActionSkip
 )
 
 // String returns "create" / "update" / etc.

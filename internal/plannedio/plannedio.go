@@ -254,7 +254,7 @@ func stampInFront(front, name string, id int64) (string, error) {
 	target := -1
 	for i, ln := range lines {
 		t := strings.TrimSpace(ln)
-		if !(strings.HasPrefix(t, "- name:") || strings.HasPrefix(t, "-name:")) {
+		if !strings.HasPrefix(t, "- name:") && !strings.HasPrefix(t, "-name:") {
 			continue
 		}
 		// Extract the value, stripping quotes.
@@ -268,12 +268,10 @@ func stampInFront(front, name string, id int64) (string, error) {
 	if target < 0 {
 		return "", fmt.Errorf("workout %q not found in frontmatter", name)
 	}
-	// Determine the indent of subsequent fields (the line after "- name:").
+	// Determine the indent of subsequent fields. Mapping items continue at
+	// itemIndent + len("- ") = itemIndent + 2.
 	itemIndent := leadingSpaces(lines[target])
-	fieldIndent := itemIndent + "  " // "- " is 2 chars, then continuation is two more spaces in
-	// Actually mapping items continue at itemIndent + len("- ") = itemIndent + 2.
-	// We use that:
-	fieldIndent = strings.Repeat(" ", len(itemIndent)+2)
+	fieldIndent := strings.Repeat(" ", len(itemIndent)+2)
 	// Look for an existing icu_event_id within this list item (until the
 	// next "- " at the same indent or end).
 	idLine := fmt.Sprintf("%sicu_event_id: %d", fieldIndent, id)

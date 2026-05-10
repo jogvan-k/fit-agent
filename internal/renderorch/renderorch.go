@@ -66,6 +66,7 @@ type Stats struct {
 	Errors    int
 }
 
+// Add increments the counter corresponding to outcome o.
 func (s *Stats) Add(o Outcome) {
 	switch o {
 	case OutcomeAdded:
@@ -77,6 +78,7 @@ func (s *Stats) Add(o Outcome) {
 	}
 }
 
+// Merge folds the counters of o into s.
 func (s *Stats) Merge(o Stats) {
 	s.Added += o.Added
 	s.Updated += o.Updated
@@ -93,8 +95,11 @@ func (s Stats) String() string {
 type Outcome int
 
 const (
+	// OutcomeAdded means the renderer wrote a new file.
 	OutcomeAdded Outcome = iota
+	// OutcomeUpdated means the renderer rewrote an existing file.
 	OutcomeUpdated
+	// OutcomeUnchanged means the rendered bytes matched the existing file.
 	OutcomeUnchanged
 )
 
