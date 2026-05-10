@@ -94,7 +94,7 @@ func TestWellnessRendersMonth(t *testing.T) {
 	}
 }
 
-func TestPlannedRespectsExistingFile(t *testing.T) {
+func TestPlannedWritesPulledMirrorForUnownedEvent(t *testing.T) {
 	c := newCtx(t)
 	writeJSON(t, c.Layout.CacheEventPath("777"), map[string]any{
 		"id":               777,
@@ -102,28 +102,108 @@ func TestPlannedRespectsExistingFile(t *testing.T) {
 		"start_date_local": "2026-05-12T07:00:00",
 		"name":             "Threshold",
 		"type":             "Ride",
+		"description":      "- 5m Z2\n- 20m Z4\n- 5m Z2\n",
 	})
 	r, _ := daterange.Parse(daterange.Inputs{From: "2026-05-01", To: "2026-05-31"}, c.Location, c.Now)
 	stats, err := Planned(context.Background(), c, r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if stats.Added != 1 {
+	if stats.Added != 1 || stats.Errors != 0 {
 		t.Errorf("first run = %+v", stats)
 	}
-	// User edits the file; second run must NOT clobber.
-	plannedPath := c.Layout.PlannedWorkoutDayPath(time.Date(2026, 5, 12, 0, 0, 0, 0, c.Location))
-	want := []byte("EDITED BY AGENT\n")
-	if err := workspace.AtomicWrite(plannedPath, want, 0); err != nil {
-		t.Fatal(err)
+	pulledPath := c.Layout.PulledWorkoutDayPath(time.Date(2026, 5, 12, 0, 0, 0, 0, c.Location), "777")
+	body, err := os.ReadFile(pulledPath)
+	if err != nil {
+		t.Fatalf("expected pulled mirror at %s: %v", pulledPath, err)
 	}
+	if !bytes.Contains(body, []byte("kind: pulled-workout-day")) {
+		t.Errorf("mirror body missing pulled-workout-day frontmatter:\n%s", body)
+	}
+	if !bytes.Contains(body, []byte("read_only: true")) {
+		t.Errorf("mirror body missing read_only flag:\n%s", body)
+	}
+
+	// Sanity: no agent-owned file was created in the place of the mirror.
+	plainPath := c.Layout.PlannedWorkoutDayPath(time.Date(2026, 5, 12, 0, 0, 0, 0, c.Location))
+	if _, err := os.Stat(plainPath); !os.IsNotExist(err) {
+		t.Errorf("unexpected agent-owned file at %s", plainPath)
+	}
+
+	// Second run is idempotent.
 	stats2, _ := Planned(context.Background(), c, r)
-	if stats2.Unchanged != 1 || stats2.Added != 0 {
+	if stats2.Added != 0 || stats2.Unchanged != 1 {
 		t.Errorf("second run = %+v", stats2)
 	}
-	got, _ := os.ReadFile(plannedPath)
-	if string(got) != string(want) {
-		t.Errorf("planned file overwritten; got:\n%s", got)
+}
+
+func TestPlannedSkipsEventOwnedByLocalMarkdown(t *testing.T) {
+	c := newCtx(t)
+	writeJSON(t, c.Layout.CacheEventPath("888"), map[string]any{
+		"id":               888,
+		"category":         "WORKOUT",
+		"start_date_local": "2026-05-13T07:00:00",
+		"name":             "Tempo",
+		"type":             "Run",
+	})
+	// Agent-authored file that claims the event by stamped id.
+	local := []byte(`---
+fit-agent:
+  kind: planned-workout-day
+  date: 2026-05-13
+workouts:
+  - name: Tempo
+    type: Run
+    moving_time_s: 2400
+    icu_event_id: 888
+---
+
+## Tempo
+
+Threshold work.
+
+` + "```fit-workout\n- 30m Z3\n```\n")
+	plainPath := c.Layout.PlannedWorkoutDayPath(time.Date(2026, 5, 13, 0, 0, 0, 0, c.Location))
+	if err := workspace.AtomicWrite(plainPath, local, 0); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := daterange.Parse(daterange.Inputs{From: "2026-05-01", To: "2026-05-31"}, c.Location, c.Now)
+	stats, err := Planned(context.Background(), c, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Added != 0 || stats.Unchanged != 1 {
+		t.Errorf("stats = %+v", stats)
+	}
+	// Local file untouched.
+	got, _ := os.ReadFile(plainPath)
+	if !bytes.Equal(got, local) {
+		t.Errorf("local file modified:\n%s", got)
+	}
+	// No mirror created.
+	pulledPath := c.Layout.PulledWorkoutDayPath(time.Date(2026, 5, 13, 0, 0, 0, 0, c.Location), "888")
+	if _, err := os.Stat(pulledPath); !os.IsNotExist(err) {
+		t.Errorf("unexpected mirror at %s", pulledPath)
+	}
+}
+
+func TestPlannedPrunesStaleMirror(t *testing.T) {
+	c := newCtx(t)
+	// Pre-existing mirror file with no matching cache event.
+	stalePath := c.Layout.PulledWorkoutDayPath(time.Date(2026, 5, 14, 0, 0, 0, 0, c.Location), "999")
+	if err := workspace.AtomicWrite(stalePath, []byte("stale mirror\n"), 0); err != nil {
+		t.Fatal(err)
+	}
+	r, _ := daterange.Parse(daterange.Inputs{From: "2026-05-01", To: "2026-05-31"}, c.Location, c.Now)
+	stats, err := Planned(context.Background(), c, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Removed != 1 {
+		t.Errorf("Removed = %d, want 1; stats=%+v", stats.Removed, stats)
+	}
+	if _, err := os.Stat(stalePath); !os.IsNotExist(err) {
+		t.Errorf("stale mirror not pruned: %v", err)
 	}
 }
 

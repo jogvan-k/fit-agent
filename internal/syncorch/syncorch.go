@@ -157,7 +157,7 @@ func pull(ctx context.Context, c Context, r daterange.Range) (PullStats, error) 
 
 	// Build the set of icu_event_ids and (date,name) keys claimed by
 	// locally-authored markdown so we know which icu events to skip.
-	localIDs, localKeys, err := indexLocalMarkdown(c.Layout.PlannedWorkoutsDir(), r)
+	localIDs, localKeys, err := IndexLocalMarkdown(c.Layout.PlannedWorkoutsDir(), r)
 	if err != nil {
 		return stats, err
 	}
@@ -200,7 +200,7 @@ func pull(ctx context.Context, c Context, r daterange.Range) (PullStats, error) 
 			continue
 		}
 		path := c.Layout.PulledWorkoutDayPath(date, fmt.Sprintf("%d", ev.ID))
-		written, err := writePulledFile(path, body, c.DryRun)
+		written, err := WritePulledFile(path, body, c.DryRun)
 		if err != nil {
 			c.logf("event id=%d: write failed: %v", ev.ID, err)
 			stats.Errors++
@@ -217,7 +217,7 @@ func pull(ctx context.Context, c Context, r daterange.Range) (PullStats, error) 
 	// Prune stale .icu.md files: any *.icu.md in the planned-workouts
 	// directory whose date is in range and whose id is not in retainID
 	// represents an event that has been deleted from icu.
-	removed, err := pruneStalePulled(c.Layout.PlannedWorkoutsDir(), r, retainID, c.DryRun, c.logf)
+	removed, err := PruneStalePulled(c.Layout.PlannedWorkoutsDir(), r, retainID, c.DryRun, c.logf)
 	if err != nil {
 		return stats, err
 	}
@@ -225,10 +225,14 @@ func pull(ctx context.Context, c Context, r daterange.Range) (PullStats, error) 
 	return stats, nil
 }
 
-// indexLocalMarkdown returns the set of icu_event_ids claimed by
+// IndexLocalMarkdown returns the set of icu_event_ids claimed by
 // agent-authored .md files (excluding .icu.md) and a parallel set of
 // (date, name) keys for unstamped workouts.
-func indexLocalMarkdown(dir string, r daterange.Range) (map[int64]bool, map[string]bool, error) {
+//
+// Exported so renderorch (and other callers) can decide whether a
+// cached icu event is already owned by a local file before writing a
+// read-only `.icu.md` mirror.
+func IndexLocalMarkdown(dir string, r daterange.Range) (map[int64]bool, map[string]bool, error) {
 	ids := map[int64]bool{}
 	keys := map[string]bool{}
 	entries, err := os.ReadDir(dir)
@@ -267,14 +271,14 @@ func indexLocalMarkdown(dir string, r daterange.Range) (map[int64]bool, map[stri
 	return ids, keys, nil
 }
 
-// pruneStalePulled walks the planned-workouts directory and deletes
+// PruneStalePulled walks the planned-workouts directory and deletes
 // any *.icu.md whose embedded id is not in retainID and whose date is
 // in range.
 //
 // File names follow the layout convention
 // `YYYY-MM-DD.<icu-id>.icu.md`; pruning is a no-op for any file that
 // does not match the pattern.
-func pruneStalePulled(dir string, r daterange.Range, retain map[int64]bool, dryRun bool, logf func(string, ...any)) (int, error) {
+func PruneStalePulled(dir string, r daterange.Range, retain map[int64]bool, dryRun bool, logf func(string, ...any)) (int, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -291,7 +295,7 @@ func pruneStalePulled(dir string, r daterange.Range, retain map[int64]bool, dryR
 		if !strings.HasSuffix(name, ".icu.md") {
 			continue
 		}
-		date, idStr, ok := parsePulledFilename(name)
+		date, idStr, ok := ParsePulledFilename(name)
 		if !ok {
 			continue
 		}
@@ -321,12 +325,12 @@ func pruneStalePulled(dir string, r daterange.Range, retain map[int64]bool, dryR
 	return removed, nil
 }
 
-// parsePulledFilename splits "2026-05-04.12345.icu.md" into
+// ParsePulledFilename splits "2026-05-04.12345.icu.md" into
 // ("2026-05-04", "12345", true). Returns ok=false for any other shape.
 // When the filename starts with a YYYY-MM-DD prefix but the id segment
 // is missing (e.g. "2026-05-04.icu.md"), the date is still returned to
 // help callers log which file was rejected, but ok is false.
-func parsePulledFilename(name string) (date, id string, ok bool) {
+func ParsePulledFilename(name string) (date, id string, ok bool) {
 	if !strings.HasSuffix(name, ".icu.md") {
 		return "", "", false
 	}
@@ -359,9 +363,11 @@ func writeCacheEvent(l workspace.Layout, ev icu.Event, dryRun bool) error {
 	return workspace.AtomicWrite(path, body, 0)
 }
 
-// writePulledFile writes body to path atomically, returning whether
+// WritePulledFile writes body to path atomically, returning whether
 // the file changed (true) or already matched the new bytes (false).
-func writePulledFile(path string, body []byte, dryRun bool) (bool, error) {
+// The `generated_at:` frontmatter line is ignored when comparing, so
+// regenerating the same content does not register as a change.
+func WritePulledFile(path string, body []byte, dryRun bool) (bool, error) {
 	existing, err := os.ReadFile(path)
 	if err == nil && bytesEqualIgnoringGenerated(existing, body) {
 		return false, nil

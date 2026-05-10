@@ -202,9 +202,9 @@ func TestParsePulledFilename(t *testing.T) {
 		{"2026-05-04.icu.md", "2026-05-04", "", false}, // missing id segment between date and suffix
 	}
 	for _, tc := range cases {
-		gd, gi, ok := parsePulledFilename(tc.in)
-		if ok != tc.ok || gd != tc.date || gi != tc.id {
-			t.Errorf("parsePulledFilename(%q) = (%q,%q,%v); want (%q,%q,%v)", tc.in, gd, gi, ok, tc.date, tc.id, tc.ok)
+		gd, gi, ok := ParsePulledFilename(tc.in)
+		if gd != tc.date || gi != tc.id || ok != tc.ok {
+			t.Errorf("ParsePulledFilename(%q) = (%q,%q,%v); want (%q,%q,%v)", tc.in, gd, gi, ok, tc.date, tc.id, tc.ok)
 		}
 	}
 }
