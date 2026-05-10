@@ -347,6 +347,41 @@ func TestCreateEventDecodesStringWorkoutDoc(t *testing.T) {
 	}
 }
 
+// TestCreateEventDecodesBoolIndoor is a regression test for the
+// `cannot unmarshal bool into Go struct field Event.indoor` error
+// observed in `render planned`: intervals.icu returns the `indoor`
+// field as a JSON bool, not a string.
+func TestCreateEventDecodesBoolIndoor(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"id":101,"start_date_local":"2026-05-11T00:00:00","category":"WORKOUT","name":"Trainer","indoor":true}`)
+	})
+	c, _ := newTestClient(t, h)
+	ev, err := c.CreateEvent(context.Background(), "i1", Event{Name: "Trainer", Category: EventCategoryWorkout, StartDateLocal: "2026-05-11T00:00:00"})
+	if err != nil {
+		t.Fatalf("CreateEvent: %v", err)
+	}
+	if ev.Indoor == nil || !*ev.Indoor {
+		t.Errorf("Indoor = %v, want pointer to true", ev.Indoor)
+	}
+}
+
+// TestCreateEventOmitsIndoorWhenAbsent confirms a missing icu `indoor`
+// field decodes to a nil pointer (so re-encoding drops it via
+// omitempty rather than emitting a stray "indoor": false).
+func TestCreateEventOmitsIndoorWhenAbsent(t *testing.T) {
+	h := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"id":102,"start_date_local":"2026-05-11T00:00:00","category":"WORKOUT","name":"Outside"}`)
+	})
+	c, _ := newTestClient(t, h)
+	ev, err := c.CreateEvent(context.Background(), "i1", Event{Name: "Outside", Category: EventCategoryWorkout, StartDateLocal: "2026-05-11T00:00:00"})
+	if err != nil {
+		t.Fatalf("CreateEvent: %v", err)
+	}
+	if ev.Indoor != nil {
+		t.Errorf("Indoor = %v, want nil", ev.Indoor)
+	}
+}
+
 func TestParseRetryAfter(t *testing.T) {
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	cases := []struct {

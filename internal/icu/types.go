@@ -96,7 +96,12 @@ type Event struct {
 	Description    string `json:"description,omitempty"`
 	Type           string `json:"type,omitempty"`
 	MovingTime     int    `json:"moving_time,omitempty"`
-	IndoorOutdoor  string `json:"indoor,omitempty"`
+	// Indoor is intervals.icu's indoor flag. The field is a bool on the
+	// wire (older docs and our pre-2026 cache files showed it as a
+	// string, which broke decoding once icu started returning real
+	// booleans). Stored as a pointer so omitempty still drops the field
+	// when icu doesn't send it.
+	Indoor *bool `json:"indoor,omitempty"`
 	// WorkoutDoc is intervals.icu's structured workout representation.
 	// Historically the API returned a string; in 2026 the field became a
 	// JSON object ({"steps":[...]}). We keep it as raw JSON so decoding
