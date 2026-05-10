@@ -22,9 +22,9 @@ planned-workouts/*.md file against the cached .cache/events/*.json
 snapshot and applies create / update / delete actions to intervals.icu.
 
 Prefer ` + "`fit-agent sync-workouts`" + `, which additionally pulls
-events authored on intervals.icu (or by other devices) and materialises
-them as read-only ` + "`*.icu.md`" + ` files in the planned-workouts
-directory so the agent can see them.
+events authored on intervals.icu (or by other devices) and refreshes
+the machine-owned YAML block inside each per-day planned-workout
+markdown file so the agent can see them.
 
 Run ` + "`fit-agent cache events`" + ` (or ` + "`fit-agent fetch`" + `) first so that
 the diff sees the current calendar state. Server-assigned event IDs are

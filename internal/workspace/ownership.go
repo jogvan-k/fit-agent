@@ -122,7 +122,6 @@ func (l Layout) relPath(path string) (string, bool) {
 //
 // Rules (longest-prefix first):
 //   - fit-agent/.cache/**                         machine
-//   - fit-agent/planned-workouts/**.icu.md        machine (pulled from icu)
 //   - fit-agent/planned-workouts/**               shared
 //   - fit-agent/activities/**                     machine
 //   - fit-agent/wellness/**                       machine
@@ -135,8 +134,6 @@ func (l Layout) relPath(path string) (string, bool) {
 func classifyRel(rel string) Owner {
 	switch {
 	case strings.HasPrefix(rel, "fit-agent/.cache/") || rel == "fit-agent/.cache":
-		return OwnerMachine
-	case strings.HasPrefix(rel, "fit-agent/planned-workouts/") && strings.HasSuffix(rel, ".icu.md"):
 		return OwnerMachine
 	case strings.HasPrefix(rel, "fit-agent/planned-workouts/") || rel == "fit-agent/planned-workouts":
 		return OwnerShared

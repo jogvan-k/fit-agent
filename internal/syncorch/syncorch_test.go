@@ -2,7 +2,6 @@ package syncorch
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,20 +16,19 @@ import (
 	"github.com/jogvan-k/fit-agent/internal/workspace"
 )
 
-// TestSyncPullCreatesIcuMirror covers the canonical pull path: an icu
-// event with no matching local markdown becomes a read-only `.icu.md`
-// file. A second sync against the same server reports zero new
-// writes (idempotent), and removing the event from icu deletes the
-// mirror file.
-func TestSyncPullCreatesIcuMirror(t *testing.T) {
+// TestSyncPullCreatesDayFile covers the canonical pull path: an icu
+// event with no matching local markdown causes Sync to create a
+// `<date>.md` with a default skeleton and a populated machine-owned
+// icu block. A second sync against the same server is idempotent;
+// removing the event on icu prunes the cache file and clears the
+// block on the next render.
+func TestSyncPullCreatesDayFile(t *testing.T) {
 	tmp := t.TempDir()
 	layout := workspace.New(tmp)
 	if err := layout.EnsureDirs(); err != nil {
 		t.Fatal(err)
 	}
 
-	// Server returns one event in range. The empty list is used after
-	// `removeEvent` is set true.
 	var removeEvent atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -67,67 +65,83 @@ func TestSyncPullCreatesIcuMirror(t *testing.T) {
 		Now:       time.Date(2026, 5, 3, 20, 14, 0, 0, time.UTC),
 		Logger:    func(format string, args ...any) { t.Logf(format, args...) },
 	}
-	r := daterange.Range{Oldest: "2026-05-01", Newest: "2026-05-31"}
+	r := daterange.Range{
+		Oldest:  "2026-05-01",
+		Newest:  "2026-05-31",
+		OldestT: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		NewestT: time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC),
+	}
 
-	// First run: creates the mirror.
+	// First run: creates the day file with the icu block.
 	res, err := Sync(context.Background(), ctx, r)
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	if res.Pull.Written != 1 || res.Pull.Local != 0 || res.Pull.Removed != 0 {
+	if res.Pull.Events != 1 || res.Pull.Render.Added != 1 {
 		t.Errorf("first sync stats unexpected: %+v", res.Pull)
 	}
-	mirror := layout.PulledWorkoutDayPath(time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC), "4711")
-	body, err := os.ReadFile(mirror)
+	dayPath := layout.PlannedWorkoutDayPath(time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC))
+	body, err := os.ReadFile(dayPath)
 	if err != nil {
-		t.Fatalf("expected mirror at %s: %v", mirror, err)
+		t.Fatalf("expected day file at %s: %v", dayPath, err)
 	}
-	if !strings.Contains(string(body), "kind: pulled-workout-day") {
-		t.Errorf("mirror missing kind: %s", body)
+	if !strings.Contains(string(body), "kind: planned-workout-day") {
+		t.Errorf("missing planned-workout-day frontmatter: %s", body)
 	}
 	if !strings.Contains(string(body), "icu_event_id: 4711") {
-		t.Errorf("mirror missing event id: %s", body)
+		t.Errorf("missing event id in icu block: %s", body)
+	}
+	if !strings.Contains(string(body), "<!-- fit-agent:icu:begin -->") {
+		t.Errorf("missing begin sentinel: %s", body)
 	}
 	// Cache should be refreshed.
-	cachePath := layout.CacheEventPath("4711")
-	if _, err := os.Stat(cachePath); err != nil {
-		t.Errorf("expected cache file %s: %v", cachePath, err)
+	if _, err := os.Stat(layout.CacheEventPath("4711")); err != nil {
+		t.Errorf("expected cache file: %v", err)
 	}
 
-	// Second run: idempotent, no changes.
+	// Second run: idempotent — no new files, no rewrite.
 	res, err = Sync(context.Background(), ctx, r)
 	if err != nil {
 		t.Fatalf("Sync 2: %v", err)
 	}
-	if res.Pull.Written != 0 || res.Pull.Unchanged != 1 {
+	if res.Pull.Render.Added != 0 || res.Pull.Render.Unchanged != 1 {
 		t.Errorf("idempotent sync stats unexpected: %+v", res.Pull)
 	}
 
-	// Third run: event removed on icu side, mirror should be pruned.
+	// Third run: event removed on icu side. Cache file is pruned and
+	// the block is rewritten with events: [].
 	removeEvent.Store(true)
 	res, err = Sync(context.Background(), ctx, r)
 	if err != nil {
 		t.Fatalf("Sync 3: %v", err)
 	}
-	if res.Pull.Removed != 1 {
-		t.Errorf("expected 1 removed, got %+v", res.Pull)
+	if res.Pull.CacheRemoved != 1 {
+		t.Errorf("expected 1 cache_removed, got %+v", res.Pull)
 	}
-	if _, err := os.Stat(mirror); !os.IsNotExist(err) {
-		t.Errorf("expected mirror to be removed: %v", err)
+	if _, err := os.Stat(layout.CacheEventPath("4711")); !os.IsNotExist(err) {
+		t.Errorf("expected cache to be pruned: %v", err)
+	}
+	// The day file still exists (the agent may have added prose by
+	// now) but the icu block no longer contains events because the
+	// cache is empty for that date. Render is only invoked for dates
+	// with at least one cached event, so the block is left as-is —
+	// matching the joint-ownership contract.
+	if _, err := os.Stat(dayPath); err != nil {
+		t.Errorf("day file unexpectedly removed: %v", err)
 	}
 }
 
-// TestSyncSkipsLocallyAuthored confirms an icu event whose id matches
-// a stamped local file is treated as local (no .icu.md is written).
-func TestSyncSkipsLocallyAuthored(t *testing.T) {
+// TestSyncPreservesAgentContent confirms an icu event whose id matches
+// a stamped local workout is reflected in the machine block while the
+// agent's frontmatter, prose, and fit-workout fence are preserved.
+func TestSyncPreservesAgentContent(t *testing.T) {
 	tmp := t.TempDir()
 	layout := workspace.New(tmp)
 	if err := layout.EnsureDirs(); err != nil {
 		t.Fatal(err)
 	}
-	// Local file with id=4711 stamped.
 	localPath := layout.PlannedWorkoutDayPath(time.Date(2026, 5, 4, 0, 0, 0, 0, time.UTC))
-	if err := os.WriteFile(localPath, []byte(`---
+	agent := []byte(`---
 fit-agent:
   kind: planned-workout-day
   date: 2026-05-04
@@ -139,7 +153,10 @@ workouts:
 
 ## Z2 Endurance
 
-`+"```fit-workout\n- 60m Z2\n```\n"), 0o644); err != nil {
+Easy.
+
+` + "```fit-workout\n- 60m Z2\n```\n")
+	if err := os.WriteFile(localPath, agent, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	// Cache the event so the push diff sees it as unchanged.
@@ -172,42 +189,38 @@ workouts:
 	if err != nil {
 		t.Fatal(err)
 	}
+	r := daterange.Range{
+		Oldest:  "2026-05-01",
+		Newest:  "2026-05-31",
+		OldestT: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		NewestT: time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC),
+	}
 	res, err := Sync(context.Background(), Context{
 		Client: client, AthleteID: "0", Layout: layout, Location: time.UTC,
 		Logger: func(string, ...any) {},
-	}, daterange.Range{Oldest: "2026-05-01", Newest: "2026-05-31"})
+	}, r)
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	if res.Pull.Local != 1 || res.Pull.Written != 0 {
-		t.Errorf("expected local=1 written=0, got %+v", res.Pull)
+	if res.Pull.Events != 1 {
+		t.Errorf("expected 1 event, got %+v", res.Pull)
 	}
-	// No .icu.md should have been created.
+
+	got, _ := os.ReadFile(localPath)
+	// Agent's frontmatter + prose + fence preserved.
+	if !strings.Contains(string(got), "Easy.") || !strings.Contains(string(got), "```fit-workout") {
+		t.Errorf("agent content not preserved:\n%s", got)
+	}
+	// Machine block was appended and reflects the event.
+	if !strings.Contains(string(got), "<!-- fit-agent:icu:begin -->") {
+		t.Errorf("missing begin sentinel:\n%s", got)
+	}
+	if !strings.Contains(string(got), "icu_event_id: 4711") {
+		t.Errorf("missing event id in block:\n%s", got)
+	}
+	// No legacy .icu.md files anywhere.
 	matches, _ := filepath.Glob(filepath.Join(layout.PlannedWorkoutsDir(), "*.icu.md"))
 	if len(matches) != 0 {
 		t.Errorf("unexpected .icu.md files: %v", matches)
 	}
 }
-
-func TestParsePulledFilename(t *testing.T) {
-	cases := []struct {
-		in       string
-		date, id string
-		ok       bool
-	}{
-		{"2026-05-04.4711.icu.md", "2026-05-04", "4711", true},
-		{"2026-05-04.md", "", "", false},
-		{"2026-05-04.something.icu.md", "2026-05-04", "something", true},
-		{"random.txt", "", "", false},
-		{"2026-05-04.icu.md", "2026-05-04", "", false}, // missing id segment between date and suffix
-	}
-	for _, tc := range cases {
-		gd, gi, ok := ParsePulledFilename(tc.in)
-		if gd != tc.date || gi != tc.id || ok != tc.ok {
-			t.Errorf("ParsePulledFilename(%q) = (%q,%q,%v); want (%q,%q,%v)", tc.in, gd, gi, ok, tc.date, tc.id, tc.ok)
-		}
-	}
-}
-
-// silenceLogger keeps test output tidy when verbose runs are not needed.
-var _ = json.RawMessage(nil) // keep encoding/json import used

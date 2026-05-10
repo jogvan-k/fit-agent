@@ -191,9 +191,43 @@ fit-agent/
 | `skills/**/SKILL.md` | agent (after init) | never | never |
 | `fit-agent/wellness/*.yaml` | machine | yes (upsert by date) | no |
 | `fit-agent/activities/*.yaml` | machine | yes (full rewrite) | no |
-| `fit-agent/planned-workouts/YYYY-MM-DD.md` | shared | yes (regenerate from icu) | yes (writes back ids) |
-| `fit-agent/planned-workouts/YYYY-MM-DD.<id>.icu.md` | machine | no | yes (regenerated; pruned when icu deletes the event) |
+| `fit-agent/planned-workouts/YYYY-MM-DD.md` | shared | yes (rewrites only the machine block) | yes (writes back ids + refreshes machine block) |
 | `fit-agent/.cache/**` | machine | yes | yes |
+
+Planned-workout files are **jointly owned**: the agent owns the
+frontmatter (including the `workouts:` list with `name`, `type`,
+`moving_time_s`, and the stamped `icu_event_id`), the prose, and the
+```fit-workout``` fences. The CLI owns a single fenced YAML block
+delimited by HTML-comment sentinels:
+
+```markdown
+<!-- fit-agent:icu:begin -->
+​```yaml
+# Machine-managed: rewritten on every `fit-agent render planned`.
+# Do not edit between the begin/end sentinels.
+generated_at: 2026-05-03T20:14:00Z
+source: intervals.icu
+events:
+  - icu_event_id: 12345
+    name: "Z2 Endurance"
+    type: Ride
+    category: WORKOUT
+    moving_time_s: 4500
+    start_date_local: 2026-05-04T07:00:00
+    description: |
+      - 10m Z1
+      - 60m Z2
+      - 5m Z1
+​```
+<!-- fit-agent:icu:end -->
+```
+
+`render planned` and `sync-workouts` rewrite the machine block in place
+and never touch any byte outside the sentinels. If a date has events
+on the icu side but no `<date>.md` file yet, the CLI creates one with
+default frontmatter (`kind: planned-workout-day`, the date, an empty
+`workouts:` list) and the machine block, so the agent can fill in
+prose and fences later.
 
 ### File anatomy (machine-owned files)
 
@@ -287,8 +321,9 @@ days:
     sleep_hours: 6.8
 ```
 
-Example `fit-agent/planned-workouts/2026-05-04.md` (markdown — agent writes
-prose intent, the ```fit-workout``` fence carries the structured plan):
+Example `fit-agent/planned-workouts/2026-05-04.md` (jointly owned —
+agent writes frontmatter, prose, and the ```fit-workout``` fence; the
+CLI rewrites only the sentinel-delimited YAML block):
 
 ```markdown
 ---
@@ -307,11 +342,21 @@ workouts:
 Easy aerobic ride. Stay strictly in Z2; if HR drifts high in the second
 half, ease off rather than push through.
 
-```fit-workout
+​```fit-workout
 - 10m Z1
 - 60m Z2
 - 5m Z1
-```
+​```
+
+<!-- fit-agent:icu:begin -->
+​```yaml
+# Machine-managed: rewritten on every `fit-agent render planned`.
+# Do not edit between the begin/end sentinels.
+generated_at: 2026-05-03T20:14:00Z
+source: intervals.icu
+events: []
+​```
+<!-- fit-agent:icu:end -->
 ```
 
 Two-tier model:
@@ -478,8 +523,8 @@ locally-authored file.
 #### Push half (identical to the legacy `push-workouts`)
 
 - Reads `planned-workouts/YYYY-MM-DD.md` files in range (the
-  agent-authored files, identified by the `.md` suffix; `*.icu.md`
-  mirror files are ignored).
+  agent-authored frontmatter and ```fit-workout``` fences; the
+  machine-owned sentinel block is ignored on push).
 - Each file may declare 0..N workouts. Schema:
   ```markdown
   ---
@@ -515,22 +560,18 @@ locally-authored file.
 #### Pull half
 
 - After push, every WORKOUT-category event in range is fetched fresh from
-  intervals.icu.
-- Events that are owned by a locally-authored markdown file (matched by
-  stamped `icu_event_id`, or by `(date, name)` when no id is stamped)
-  are skipped — the local file is the source of truth.
-- All other events are materialised as **read-only** mirror files at
-  `fit-agent/planned-workouts/YYYY-MM-DD.<id>.icu.md`. The format is
-  intentionally distinct from the agent-authored `.md` files:
-  - Frontmatter `kind: pulled-workout-day`, `read_only: true`,
-    `source: intervals.icu`, plus a single `workout:` block with the
-    icu metadata.
-  - The body contains the original `Event.Description` verbatim in a
-    plain fenced block — the renderer does not attempt to round-trip
-    it back into the `fit-workout` DSL.
-- `.cache/events/<id>.json` is refreshed to mirror the live response.
-- Any pre-existing `*.icu.md` whose icu event has been deleted (no
-  longer returned by the list call for that range) is removed.
+  intervals.icu and written to `.cache/events/<id>.json`.
+- The pull step then delegates to the same logic that drives
+  `fit-agent render planned`: it groups cached events by local calendar
+  date and rewrites the machine-owned sentinel block inside each
+  `fit-agent/planned-workouts/YYYY-MM-DD.md` (creating the file with a
+  default agent-owned skeleton when none exists).
+- The machine block contains an `events:` list with every icu event for
+  that date (id, name, type, category, moving_time_s, start_date_local,
+  description). The agent's frontmatter, prose, and ```fit-workout```
+  fences outside the sentinels are preserved byte-for-byte.
+- There are no separate `.icu.md` mirror files; the combined file is
+  the single representation of a planned day.
 
 #### Backwards compatibility
 
@@ -747,10 +788,10 @@ Markdown is kept for files where prose matters and the agent edits them:
   helper).
 - `sync-workouts` is the only command that pushes to icu. Its push half
   touches `fit-agent/planned-workouts/*.md` (to back-fill `icu_event_id`)
-  and `.cache/events/*.json`; its pull half writes
-  `fit-agent/planned-workouts/*.icu.md` and refreshes
-  `.cache/events/*.json`. The deprecated `push-workouts` alias only runs
-  the push half.
+  and `.cache/events/*.json`; its pull half refreshes
+  `.cache/events/*.json` and rewrites only the machine-owned sentinel
+  block inside each `fit-agent/planned-workouts/*.md`. The deprecated
+  `push-workouts` alias only runs the push half.
 
 ---
 
@@ -786,7 +827,7 @@ Markdown is kept for files where prose matters and the agent edits them:
 | M5 | `init` command end-to-end | scaffolds a real workspace incl. skill templates |
 | M6 | `fetch` command (activities + wellness + planned, with cache) | idempotent across reruns |
 | M7 | `internal/workoutdsl` + `WORKOUT-BUILDER.md` reference | round-trip tests green |
-| M8 | `sync-workouts` command (push then pull) | create/update/delete against icu + read-only `.icu.md` mirrors |
+| M8 | `sync-workouts` command (push then pull) | create/update/delete against icu + machine-owned icu block in each `planned-workouts/*.md` |
 | M9 | Polish: rate-limits, `--dry-run` everywhere, error messages, docs | v1.0.0 release |
 
 Post-v1:
@@ -943,8 +984,7 @@ dependencies.
 - [x] Write returned `icu_event_id` back into the markdown frontmatter
 - [x] `--dry-run` prints the icu description that would be sent
 - [x] End-to-end test against fake icu server (create → modify → delete)
-- [x] Pull half: list events from icu and render read-only `*.icu.md` files for events not authored locally
-- [x] Prune stale `*.icu.md` files when their icu event no longer exists in range
+- [x] Pull half: list events from icu, refresh `.cache/events/<id>.json`, and rewrite the machine-owned sentinel block inside each `planned-workouts/YYYY-MM-DD.md` (creating the file with a default skeleton when missing)
 - [x] `push-workouts` retained as deprecated alias for the push half only
 
 ### M9 — Polish & release

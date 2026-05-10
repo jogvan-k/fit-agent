@@ -16,10 +16,11 @@ training-plan-coach's job).
   sleep duration and quality, ramp rate, CTL/ATL.
 - `fit-agent/activities/*.yaml` for the last 7 days — perceived
   exertion, completed vs planned, signs of accumulated fatigue.
-- `fit-agent/planned-workouts/<today>.md` — what is on the calendar
-  (agent-authored). Read-only mirrors of icu-authored workouts also
-  live here as `<today>.<id>.icu.md` files; treat those as input
-  only.
+- `fit-agent/planned-workouts/<today>.md` — what is on the calendar.
+  Read the `workouts:` frontmatter and any `## name` sections for the
+  agent-authored plan, and also check the machine-owned YAML block
+  (between the `<!-- fit-agent:icu:begin -->` / `end` sentinels) for
+  the live icu state, including any workouts authored elsewhere.
 - `TRAINING-PLAN.md` — the broader context. Where in the plan is the
   athlete (build vs taper)?
 

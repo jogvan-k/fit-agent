@@ -26,11 +26,13 @@ It runs in two phases:
      behaviour as the legacy ` + "`push-workouts`" + ` command).
 
   2. Pull: every WORKOUT-category event in range is fetched fresh from
-     icu. Events that are not authored locally (no matching .md file
-     by stamped icu_event_id, or by date+name) are materialised as
-     read-only mirror files at
-     ` + "`fit-agent/planned-workouts/YYYY-MM-DD.<id>.icu.md`" + `.
-     Read-only mirrors whose icu event has been deleted are removed.
+     icu and written to ` + "`.cache/events/<id>.json`" + `. The pull
+     step then rewrites the machine-owned YAML block (delimited by the
+     ` + "`<!-- fit-agent:icu:begin -->`" + ` / ` + "`<!-- fit-agent:icu:end -->`" + `
+     sentinels) inside each ` + "`fit-agent/planned-workouts/YYYY-MM-DD.md`" + `,
+     creating the file with a default skeleton when none exists. The
+     agent's frontmatter, prose, and ` + "`fit-workout`" + ` fences are
+     preserved byte-for-byte.
 
 Push runs first so that workouts the agent just authored are returned
 by the subsequent pull and stamped with their server-assigned id in

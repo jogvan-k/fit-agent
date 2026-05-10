@@ -33,3 +33,6 @@ go.work.sum
 
 # Build artifacts
 /bin/
+
+# Deployment script
+deploy-to-pi.sh

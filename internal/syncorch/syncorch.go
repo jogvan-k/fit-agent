@@ -1,26 +1,21 @@
 // Package syncorch implements the two-way `fit-agent sync-workouts`
-// flow: it pushes agent-authored planned-workouts/*.md to intervals.icu
+// flow. It pushes agent-authored planned-workouts/*.md to intervals.icu
 // (via [pushorch]), then pulls every WORKOUT-category event in range
-// from intervals.icu and materialises the ones the agent did NOT
-// author locally as read-only `.icu.md` files alongside the agent's
-// own files.
+// and refreshes the workspace to reflect the live icu state.
 //
 // Push runs first so that workouts the agent just authored are
 // returned by the subsequent pull and stamped with their server-
-// assigned id in the locally-authored file (already handled by
-// pushorch.Apply).
+// assigned id in the locally-authored file (handled by pushorch.Apply).
 //
-// The pull step is the source of truth for the planned-workouts/
-// directory's read-only contents:
+// The pull step:
 //
-//   - Each icu event with no matching locally-authored file (matched by
-//     icu_event_id stamped in frontmatter, or by (date, name) when no
-//     id is stamped) is rendered to a `.icu.md` file.
-//   - Any pre-existing `.icu.md` file in the date range that does NOT
-//     correspond to an event returned by icu is removed (it represents
-//     a workout that has been deleted on the icu side).
-//   - The matching `.cache/events/<id>.json` is refreshed to mirror the
-//     live response.
+//  1. Lists events from icu over the requested range.
+//  2. Writes each event to `.cache/events/<id>.json`.
+//  3. Removes any `.cache/events/<id>.json` whose icu event has been
+//     deleted on the server side and whose start date falls in range.
+//  4. Delegates to [renderorch.Planned] to rewrite the machine-owned
+//     icu block inside each `planned-workouts/YYYY-MM-DD.md`,
+//     preserving every byte the agent owns outside the sentinels.
 package syncorch
 
 import (
@@ -34,9 +29,8 @@ import (
 
 	"github.com/jogvan-k/fit-agent/internal/daterange"
 	"github.com/jogvan-k/fit-agent/internal/icu"
-	"github.com/jogvan-k/fit-agent/internal/plannedio"
 	"github.com/jogvan-k/fit-agent/internal/pushorch"
-	"github.com/jogvan-k/fit-agent/internal/render"
+	"github.com/jogvan-k/fit-agent/internal/renderorch"
 	"github.com/jogvan-k/fit-agent/internal/workspace"
 )
 
@@ -46,7 +40,7 @@ type Context struct {
 	AthleteID string
 	Layout    workspace.Layout
 	Location  *time.Location
-	// Now stamps generated_at into rendered .icu.md files. Defaults
+	// Now stamps generated_at into the rewritten icu block. Defaults
 	// to time.Now() when zero.
 	Now time.Time
 	// DryRun reports actions without writing to disk or calling icu's
@@ -85,33 +79,24 @@ func (r Result) String() string {
 
 // PullStats counts what the pull step did.
 type PullStats struct {
-	// Written is the number of .icu.md files newly added or rewritten.
-	Written int
-	// Unchanged is the number of .icu.md files that already matched.
-	Unchanged int
-	// Removed is the number of stale .icu.md files deleted because
-	// the corresponding icu event no longer exists in range.
-	Removed int
-	// Local is the number of icu events that were skipped because a
-	// locally-authored .md file owns them (matched by id or date+name).
-	Local  int
+	// Events is the number of icu events returned by ListEvents.
+	Events int
+	// CacheRemoved is the number of stale .cache/events/<id>.json
+	// files deleted because their icu event no longer exists.
+	CacheRemoved int
+	// Render reports what the renderorch.Planned delegate did to the
+	// planned-workouts/*.md files.
+	Render renderorch.Stats
 	Errors int
 }
 
 // String formats PullStats for a one-line summary.
 func (s PullStats) String() string {
-	return fmt.Sprintf("written=%d unchanged=%d removed=%d local=%d errors=%d",
-		s.Written, s.Unchanged, s.Removed, s.Local, s.Errors)
+	return fmt.Sprintf("events=%d cache_removed=%d render[%s] errors=%d",
+		s.Events, s.CacheRemoved, s.Render.String(), s.Errors)
 }
 
 // Sync runs the full push-then-pull flow over the supplied range.
-//
-// The push step is identical to `fit-agent push-workouts`: it diffs
-// markdown against the cached event snapshot and applies create /
-// update / delete actions. The pull step then re-fetches events from
-// icu (so the snapshot reflects anything the push just created) and
-// writes / removes `.icu.md` files for events that are not authored
-// locally.
 func Sync(ctx context.Context, c Context, r daterange.Range) (Result, error) {
 	var res Result
 
@@ -134,7 +119,7 @@ func Sync(ctx context.Context, c Context, r daterange.Range) (Result, error) {
 	}
 	res.Push = pushorch.Summarise(actions)
 
-	// 2. Pull from icu and materialise read-only .icu.md files.
+	// 2. Pull from icu and reconcile the workspace.
 	pullStats, err := pull(ctx, c, r)
 	res.Pull = pullStats
 	if err != nil {
@@ -143,208 +128,51 @@ func Sync(ctx context.Context, c Context, r daterange.Range) (Result, error) {
 	return res, nil
 }
 
-// pull fetches events from icu and reconciles them against the
-// workspace.
-//
-// It is intentionally tolerant: a single broken event is logged and
-// counted in PullStats.Errors but does not abort the loop.
+// pull fetches events from icu, refreshes the events cache, prunes
+// stale cache entries, and delegates rendering to renderorch.Planned.
 func pull(ctx context.Context, c Context, r daterange.Range) (PullStats, error) {
 	var stats PullStats
 	events, err := c.Client.ListEvents(ctx, c.AthleteID, r.Oldest, r.Newest, icu.EventCategoryWorkout)
 	if err != nil {
 		return stats, fmt.Errorf("list events: %w", err)
 	}
+	stats.Events = len(events)
 
-	// Build the set of icu_event_ids and (date,name) keys claimed by
-	// locally-authored markdown so we know which icu events to skip.
-	localIDs, localKeys, err := IndexLocalMarkdown(c.Layout.PlannedWorkoutsDir(), r)
-	if err != nil {
-		return stats, err
-	}
-
-	// Track which event ids we should retain on disk so we can prune
-	// stale .icu.md files at the end.
-	retainID := map[int64]bool{}
-
+	// Refresh .cache/events/<id>.json for every returned event.
+	live := map[int64]bool{}
 	for _, ev := range events {
-		date, ok := parseLocalDate(ev.StartDateLocal, c.Location)
-		if !ok {
-			c.logf("event id=%d: unparseable start_date_local %q", ev.ID, ev.StartDateLocal)
-			stats.Errors++
-			continue
-		}
-		// Locally-authored files own their icu event; don't write a
-		// read-only mirror.
-		if localIDs[ev.ID] || localKeys[dateNameKey(date, ev.Name)] {
-			stats.Local++
-			continue
-		}
-		retainID[ev.ID] = true
-
-		// Refresh the cached raw JSON so subsequent push / render
-		// runs see the latest server state.
+		live[ev.ID] = true
 		if err := writeCacheEvent(c.Layout, ev, c.DryRun); err != nil {
 			c.logf("event id=%d: cache write failed: %v", ev.ID, err)
 			stats.Errors++
-			continue
-		}
-
-		body, err := render.PulledWorkoutDayMarkdown(render.PulledWorkout{
-			Event:       ev,
-			Date:        date,
-			GeneratedAt: c.now(),
-		})
-		if err != nil {
-			c.logf("event id=%d: render failed: %v", ev.ID, err)
-			stats.Errors++
-			continue
-		}
-		path := c.Layout.PulledWorkoutDayPath(date, fmt.Sprintf("%d", ev.ID))
-		written, err := WritePulledFile(path, body, c.DryRun)
-		if err != nil {
-			c.logf("event id=%d: write failed: %v", ev.ID, err)
-			stats.Errors++
-			continue
-		}
-		if written {
-			stats.Written++
-			c.logf("pulled %s id=%d -> %s", date.Format("2006-01-02"), ev.ID, filepath.Base(path))
-		} else {
-			stats.Unchanged++
 		}
 	}
 
-	// Prune stale .icu.md files: any *.icu.md in the planned-workouts
-	// directory whose date is in range and whose id is not in retainID
-	// represents an event that has been deleted from icu.
-	removed, err := PruneStalePulled(c.Layout.PlannedWorkoutsDir(), r, retainID, c.DryRun, c.logf)
+	// Remove stale cache entries: any .cache/events/<id>.json whose
+	// embedded start_date_local falls in range but whose id is not in
+	// the live set.
+	removed, err := pruneStaleCache(c.Layout, c.Location, r, live, c.DryRun, c.logf)
 	if err != nil {
 		return stats, err
 	}
-	stats.Removed = removed
+	stats.CacheRemoved = removed
+
+	// Delegate to renderorch.Planned: it reads the freshly-updated
+	// cache and rewrites the machine block inside each
+	// planned-workouts/<date>.md.
+	rctx := renderorch.Context{
+		Layout:   c.Layout,
+		Location: c.Location,
+		Now:      c.now(),
+		DryRun:   c.DryRun,
+		Logger:   c.Logger,
+	}
+	rstats, err := renderorch.Planned(ctx, rctx, r)
+	stats.Render = rstats
+	if err != nil {
+		return stats, fmt.Errorf("render planned: %w", err)
+	}
 	return stats, nil
-}
-
-// IndexLocalMarkdown returns the set of icu_event_ids claimed by
-// agent-authored .md files (excluding .icu.md) and a parallel set of
-// (date, name) keys for unstamped workouts.
-//
-// Exported so renderorch (and other callers) can decide whether a
-// cached icu event is already owned by a local file before writing a
-// read-only `.icu.md` mirror.
-func IndexLocalMarkdown(dir string, r daterange.Range) (map[int64]bool, map[string]bool, error) {
-	ids := map[int64]bool{}
-	keys := map[string]bool{}
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return ids, keys, nil
-		}
-		return nil, nil, fmt.Errorf("read planned-workouts dir: %w", err)
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if !strings.HasSuffix(name, ".md") || strings.HasSuffix(name, ".icu.md") {
-			continue
-		}
-		path := filepath.Join(dir, name)
-		day, err := plannedio.ReadDay(path)
-		if err != nil {
-			// Tolerate parse errors here: the push step would have
-			// already failed loudly. Skip silently to keep the pull
-			// resilient.
-			continue
-		}
-		if day.Date == "" || !inRange(day.Date, r) {
-			continue
-		}
-		for _, w := range day.Workouts {
-			if w.Meta.IcuEventID != nil && *w.Meta.IcuEventID != 0 {
-				ids[*w.Meta.IcuEventID] = true
-			}
-			keys[day.Date+"|"+w.Meta.Name] = true
-		}
-	}
-	return ids, keys, nil
-}
-
-// PruneStalePulled walks the planned-workouts directory and deletes
-// any *.icu.md whose embedded id is not in retainID and whose date is
-// in range.
-//
-// File names follow the layout convention
-// `YYYY-MM-DD.<icu-id>.icu.md`; pruning is a no-op for any file that
-// does not match the pattern.
-func PruneStalePulled(dir string, r daterange.Range, retain map[int64]bool, dryRun bool, logf func(string, ...any)) (int, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return 0, nil
-		}
-		return 0, fmt.Errorf("read planned-workouts dir: %w", err)
-	}
-	var removed int
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		name := e.Name()
-		if !strings.HasSuffix(name, ".icu.md") {
-			continue
-		}
-		date, idStr, ok := ParsePulledFilename(name)
-		if !ok {
-			continue
-		}
-		if !inRange(date, r) {
-			continue
-		}
-		var id int64
-		if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil || id == 0 {
-			continue
-		}
-		if retain[id] {
-			continue
-		}
-		path := filepath.Join(dir, name)
-		if dryRun {
-			logf("[dry-run] remove stale %s", name)
-			removed++
-			continue
-		}
-		if err := os.Remove(path); err != nil {
-			logf("remove %s: %v", path, err)
-			continue
-		}
-		removed++
-		logf("removed stale %s", name)
-	}
-	return removed, nil
-}
-
-// ParsePulledFilename splits "2026-05-04.12345.icu.md" into
-// ("2026-05-04", "12345", true). Returns ok=false for any other shape.
-// When the filename starts with a YYYY-MM-DD prefix but the id segment
-// is missing (e.g. "2026-05-04.icu.md"), the date is still returned to
-// help callers log which file was rejected, but ok is false.
-func ParsePulledFilename(name string) (date, id string, ok bool) {
-	if !strings.HasSuffix(name, ".icu.md") {
-		return "", "", false
-	}
-	stem := strings.TrimSuffix(name, ".icu.md")
-	if len(stem) < 10 {
-		return "", "", false
-	}
-	if _, err := time.Parse("2006-01-02", stem[:10]); err != nil {
-		return "", "", false
-	}
-	if len(stem) < 12 || stem[10] != '.' {
-		return stem[:10], "", false
-	}
-	return stem[:10], stem[11:], true
 }
 
 func writeCacheEvent(l workspace.Layout, ev icu.Event, dryRun bool) error {
@@ -363,54 +191,56 @@ func writeCacheEvent(l workspace.Layout, ev icu.Event, dryRun bool) error {
 	return workspace.AtomicWrite(path, body, 0)
 }
 
-// WritePulledFile writes body to path atomically, returning whether
-// the file changed (true) or already matched the new bytes (false).
-// The `generated_at:` frontmatter line is ignored when comparing, so
-// regenerating the same content does not register as a change.
-func WritePulledFile(path string, body []byte, dryRun bool) (bool, error) {
-	existing, err := os.ReadFile(path)
-	if err == nil && bytesEqualIgnoringGenerated(existing, body) {
-		return false, nil
+// pruneStaleCache deletes .cache/events/<id>.json files whose icu
+// event is no longer returned by ListEvents and whose start_date_local
+// falls within r. Files outside the range, or whose JSON cannot be
+// decoded, are left untouched.
+func pruneStaleCache(l workspace.Layout, loc *time.Location, r daterange.Range, live map[int64]bool, dryRun bool, logf func(string, ...any)) (int, error) {
+	dir := l.CacheEventsDir()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, fmt.Errorf("read cache events dir: %w", err)
 	}
-	if err != nil && !os.IsNotExist(err) {
-		return false, err
-	}
-	if dryRun {
-		return true, nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return false, err
-	}
-	if err := workspace.AtomicWrite(path, body, 0); err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
-// bytesEqualIgnoringGenerated compares two rendered files but ignores
-// any single `  generated_at:` frontmatter line so re-running the
-// command does not report churn for unchanged content.
-func bytesEqualIgnoringGenerated(a, b []byte) bool {
-	return stripGen(a) == stripGen(b)
-}
-
-func stripGen(b []byte) string {
-	var out strings.Builder
-	for _, line := range strings.Split(string(b), "\n") {
-		t := strings.TrimLeft(line, " ")
-		if strings.HasPrefix(t, "generated_at:") {
+	var removed int
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
 			continue
 		}
-		out.WriteString(line)
-		out.WriteByte('\n')
+		path := filepath.Join(dir, e.Name())
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		var ev icu.Event
+		if err := json.Unmarshal(data, &ev); err != nil {
+			continue
+		}
+		if live[ev.ID] {
+			continue
+		}
+		date, ok := parseLocalDate(ev.StartDateLocal, loc)
+		if !ok {
+			continue
+		}
+		if date.Before(r.OldestT) || date.After(r.NewestT) {
+			continue
+		}
+		if dryRun {
+			logf("[dry-run] remove stale cache %s", e.Name())
+			removed++
+			continue
+		}
+		if err := os.Remove(path); err != nil {
+			logf("remove %s: %v", path, err)
+			continue
+		}
+		removed++
+		logf("removed stale cache %s", e.Name())
 	}
-	return out.String()
-}
-
-// dateNameKey is the join key used to detect locally-authored workouts
-// without an icu_event_id stamp.
-func dateNameKey(date time.Time, name string) string {
-	return date.Format("2006-01-02") + "|" + name
+	return removed, nil
 }
 
 // parseLocalDate parses an icu-style start_date_local like
@@ -433,16 +263,6 @@ func parseLocalDate(s string, loc *time.Location) (time.Time, bool) {
 		}
 	}
 	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc), true
-}
-
-func inRange(date string, r daterange.Range) bool {
-	if r.Oldest != "" && date < r.Oldest {
-		return false
-	}
-	if r.Newest != "" && date > r.Newest {
-		return false
-	}
-	return true
 }
 
 func min(a, b int) int {

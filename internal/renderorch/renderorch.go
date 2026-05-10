@@ -27,8 +27,8 @@ import (
 	"github.com/jogvan-k/fit-agent/internal/daterange"
 	"github.com/jogvan-k/fit-agent/internal/fitparse"
 	"github.com/jogvan-k/fit-agent/internal/icu"
+	"github.com/jogvan-k/fit-agent/internal/plannedio"
 	"github.com/jogvan-k/fit-agent/internal/render"
-	"github.com/jogvan-k/fit-agent/internal/syncorch"
 	"github.com/jogvan-k/fit-agent/internal/workspace"
 )
 
@@ -63,11 +63,7 @@ type Stats struct {
 	Added     int
 	Updated   int
 	Unchanged int
-	// Removed counts files deleted during a render — currently only
-	// stale `.icu.md` mirror files pruned by [Planned] when the icu
-	// event behind them no longer exists in the cache.
-	Removed int
-	Errors  int
+	Errors    int
 }
 
 func (s *Stats) Add(o Outcome) {
@@ -85,15 +81,10 @@ func (s *Stats) Merge(o Stats) {
 	s.Added += o.Added
 	s.Updated += o.Updated
 	s.Unchanged += o.Unchanged
-	s.Removed += o.Removed
 	s.Errors += o.Errors
 }
 
 func (s Stats) String() string {
-	if s.Removed > 0 {
-		return fmt.Sprintf("added=%d updated=%d unchanged=%d removed=%d errors=%d",
-			s.Added, s.Updated, s.Unchanged, s.Removed, s.Errors)
-	}
 	return fmt.Sprintf("added=%d updated=%d unchanged=%d errors=%d",
 		s.Added, s.Updated, s.Unchanged, s.Errors)
 }
@@ -239,24 +230,34 @@ func Wellness(ctx context.Context, c Context, r daterange.Range) (Stats, error) 
 }
 
 // Planned reconciles cached planned-workout events against the
-// workspace's planned-workouts directory. It never overwrites
-// agent-owned markdown:
+// workspace's planned-workouts directory.
 //
-//   - For each `.cache/events/<id>.json`, if a locally-authored
-//     `YYYY-MM-DD.md` file already claims the event (either by stamped
-//     `icu_event_id` or by matching `(date, name)` for unstamped
-//     workouts), the cached event is skipped — the local file is the
-//     source of truth.
-//   - Every other in-range event is materialised as a read-only
-//     `YYYY-MM-DD.<id>.icu.md` mirror via [render.PulledWorkoutDayMarkdown],
-//     overwriting any prior mirror so the file always reflects the
-//     latest cached state.
-//   - Stale mirrors (in range, but the cached event behind them is
-//     gone) are pruned and counted in [Stats.Removed].
+// Each `planned-workouts/YYYY-MM-DD.md` is a jointly-owned file: the
+// agent owns the frontmatter (with the `workouts:` list, `name`, and
+// `icu_event_id` stamps), the prose, and the ```fit-workout``` fences;
+// the CLI owns a single fenced YAML block delimited by
+// `<!-- fit-agent:icu:begin -->` ... `<!-- fit-agent:icu:end -->`
+// sentinels.
 //
-// The logic mirrors `sync-workouts`' pull half but reads exclusively
-// from the local cache, so it is safe to invoke from offline commands
-// like `render` and the polling daemon.
+// Planned:
+//
+//   - Groups every `.cache/events/<id>.json` in range by local
+//     calendar date.
+//   - For each date with at least one event, renders the machine
+//     block via [render.ICUBlock] containing every icu event for
+//     that date and splices it into `<date>.md` via
+//     [plannedio.SpliceICUBlock]. Bytes outside the sentinels are
+//     preserved verbatim.
+//   - If `<date>.md` does not yet exist, the file is created with the
+//     default agent-owned skeleton ([render.EmptyPlannedDay]) and the
+//     freshly-rendered block.
+//
+// A date whose only icu events have been deleted on the icu side
+// disappears from the cache; the local `<date>.md` retains its prior
+// machine block until the agent removes the file or until a later
+// `render planned` run with at least one event for that date rewrites
+// the block. This matches the joint-ownership contract: the CLI does
+// not delete agent-owned files.
 func Planned(ctx context.Context, c Context, r daterange.Range) (Stats, error) {
 	_ = ctx
 	var stats Stats
@@ -265,16 +266,9 @@ func Planned(ctx context.Context, c Context, r daterange.Range) (Stats, error) {
 		return stats, err
 	}
 
-	plannedDir := c.Layout.PlannedWorkoutsDir()
-	localIDs, localKeys, err := syncorch.IndexLocalMarkdown(plannedDir, r)
-	if err != nil {
-		return stats, fmt.Errorf("index local markdown: %w", err)
-	}
-
-	// Track which icu ids are represented in the cache so we can
-	// prune stale `.icu.md` mirrors after the loop.
-	retainID := map[int64]bool{}
-
+	// Group cached events by local calendar date.
+	byDate := map[string][]icu.Event{}
+	dateTimes := map[string]time.Time{}
 	for _, p := range matches {
 		data, err := os.ReadFile(p)
 		if err != nil {
@@ -297,49 +291,56 @@ func Planned(ctx context.Context, c Context, r daterange.Range) (Stats, error) {
 		if date.Before(r.OldestT) || date.After(r.NewestT) {
 			continue
 		}
-
-		// Locally-authored markdown owns this event; never overwrite.
-		if localIDs[ev.ID] || localKeys[date.Format(daterange.DateLayout)+"|"+ev.Name] {
-			stats.Unchanged++
-			c.logf("planned %s id=%d: owned by local markdown, skipping", date.Format(daterange.DateLayout), ev.ID)
-			continue
-		}
-
-		retainID[ev.ID] = true
-
-		body, err := render.PulledWorkoutDayMarkdown(render.PulledWorkout{
-			Event:       ev,
-			Date:        date,
-			GeneratedAt: c.now(),
-		})
-		if err != nil {
-			stats.Errors++
-			c.logf("planned %s: render: %v", filepath.Base(p), err)
-			continue
-		}
-		path := c.Layout.PulledWorkoutDayPath(date, fmt.Sprintf("%d", ev.ID))
-		written, err := syncorch.WritePulledFile(path, body, c.DryRun)
-		if err != nil {
-			stats.Errors++
-			c.logf("planned %s: write: %v", filepath.Base(p), err)
-			continue
-		}
-		if written {
-			stats.Added++
-			c.logf("planned %s id=%d -> %s", date.Format(daterange.DateLayout), ev.ID, filepath.Base(path))
-		} else {
-			stats.Unchanged++
-		}
+		key := date.Format(daterange.DateLayout)
+		byDate[key] = append(byDate[key], ev)
+		dateTimes[key] = date
 	}
 
-	// Prune stale `.icu.md` mirrors in range whose id is not present
-	// in the cache anymore.
-	removed, err := syncorch.PruneStalePulled(plannedDir, r, retainID, c.DryRun, c.logf)
-	if err != nil {
-		return stats, fmt.Errorf("prune stale .icu.md: %w", err)
+	// Process dates in deterministic order so logs read top-to-bottom.
+	keys := make([]string, 0, len(byDate))
+	for k := range byDate {
+		keys = append(keys, k)
 	}
-	stats.Removed = removed
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		date := dateTimes[k]
+		events := byDate[k]
+		out, err := writePlannedDay(c, date, events)
+		if err != nil {
+			stats.Errors++
+			c.logf("planned %s: %v", k, err)
+			continue
+		}
+		stats.Add(out)
+		c.logf("planned %s: %s (events=%d)", k, out, len(events))
+	}
 	return stats, nil
+}
+
+// writePlannedDay renders the machine block for date and splices it
+// into the corresponding planned-workouts file, creating a default
+// skeleton when none exists.
+func writePlannedDay(c Context, date time.Time, events []icu.Event) (Outcome, error) {
+	path := c.Layout.PlannedWorkoutDayPath(date)
+	block := render.ICUBlock(render.ICUBlockInput{
+		Date:        date,
+		GeneratedAt: c.now(),
+		Events:      events,
+	})
+
+	existing, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		// File exists; splice the block in place.
+	case errors.Is(err, os.ErrNotExist):
+		existing = render.EmptyPlannedDay(date)
+	default:
+		return 0, fmt.Errorf("read %s: %w", path, err)
+	}
+
+	updated := plannedio.SpliceICUBlock(existing, block)
+	return writeRendered(path, updated, c.DryRun)
 }
 
 // All runs Activities + Wellness + Planned for the range.
