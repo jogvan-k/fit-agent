@@ -129,9 +129,19 @@ func RenderICU(w *Workout) string {
 }
 
 func writeICUSimple(b *strings.Builder, s SimpleStep, note string) {
-	fmt.Fprintf(b, "- %s %s", s.Amount, s.Intensity)
+	fmt.Fprintf(b, "- %s %s", icuAmount(s.Amount), s.Intensity)
 	if note != "" {
 		b.WriteString(" ")
 		b.WriteString(note)
 	}
+}
+
+// icuAmount renders an Amount for the intervals.icu description string.
+// Distances in metres must use the "mtr" suffix — intervals.icu treats
+// bare "m" as minutes, not metres.
+func icuAmount(a Amount) string {
+	if a.Distance != nil && a.Distance.Unit == "m" {
+		return fmt.Sprintf("%dmtr", a.Distance.Value)
+	}
+	return a.String()
 }

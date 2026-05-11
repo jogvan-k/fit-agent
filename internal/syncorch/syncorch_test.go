@@ -178,9 +178,18 @@ Easy.
   "name": "Z2 Endurance", "type": "Ride",
   "description": "- 60m Z2"
 }]`))
+		case r.Method == http.MethodPut:
+			// Return a single Event object as the ICU API does on update.
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+  "id": 4711, "category": "WORKOUT",
+  "start_date_local": "2026-05-04T00:00:00",
+  "name": "Z2 Endurance", "type": "Ride",
+  "description": "- 60m Z2"
+}`))
 		default:
 			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("[]"))
+			_, _ = w.Write([]byte("{}"))
 		}
 	}))
 	t.Cleanup(srv.Close)
