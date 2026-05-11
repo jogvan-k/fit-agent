@@ -8,7 +8,9 @@
 //	workout      := { step }
 //	step         := simple | repeat | ramp
 //	simple       := "- " amount SP intensity [SP "--" SP note]
-//	repeat       := "- " INT "x" SP "(" simple SP "/" SP simple ")" [SP "--" SP note]
+//	repeat       := inlineRepeat | blockRepeat
+//	inlineRepeat := "- " INT "x" SP "(" simple SP "/" SP simple ")" [SP "--" SP note]
+//	blockRepeat  := INT "x" [SP "--" SP note] NL { simple NL }+
 //	ramp         := "- " duration SP "ramp" SP zone "-" zone [SP "--" SP note]
 //	amount       := duration | distance
 //	duration     := { INT ("h"|"m"|"s") }+
@@ -45,12 +47,13 @@ type SimpleStep struct {
 	Note      string
 }
 
-// RepeatStep is "Nx (work / rest)".
+// RepeatStep is a repeated group of two or more sub-steps. The legacy
+// inline form `Nx (work / rest)` produces exactly two Steps; the
+// block form `Nx\n- step\n- step\n...` produces N >= 2 Steps.
 type RepeatStep struct {
-	Reps int
-	Work SimpleStep
-	Rest SimpleStep
-	Note string
+	Reps  int
+	Steps []SimpleStep
+	Note  string
 }
 
 // RampStep is "20m ramp Z1-Z3".
