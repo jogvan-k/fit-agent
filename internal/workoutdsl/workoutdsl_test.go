@@ -376,15 +376,44 @@ func TestRoundTripBlockRepeat(t *testing.T) {
 }
 
 func TestRenderICUBlockRepeat(t *testing.T) {
+	// 200m should be emitted as 200mtr in ICU output so intervals.icu
+	// doesn't misinterpret it as 200 minutes.
 	src := "3x\n- 1km threshold\n- 200m Z5\n- 90s recovery\n"
 	w, err := Parse(src)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	got := RenderICU(w)
-	want := "3x\n- 1km threshold\n- 200m Z5\n- 90s recovery\n"
+	want := "3x\n- 1km threshold\n- 200mtr Z5\n- 90s recovery\n"
 	if got != want {
 		t.Errorf("RenderICU mismatch:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestRenderICUMetresSuffix(t *testing.T) {
+	// Bare 'm' distances must be emitted as 'mtr' in ICU output.
+	// intervals.icu treats 'm' as minutes; 'mtr' is the unambiguous metres suffix.
+	cases := []struct {
+		src  string
+		want string
+	}{
+		{"- 400m Z5\n", "- 400mtr Z5\n"},
+		{"- 300m threshold\n", "- 300mtr threshold\n"},
+		// km and y should pass through unchanged.
+		{"- 1km easy\n", "- 1km easy\n"},
+		{"- 100y easy\n", "- 100y easy\n"},
+		// Duration 'm' (minutes) must not be affected.
+		{"- 5m easy\n", "- 5m easy\n"},
+	}
+	for _, tc := range cases {
+		w, err := Parse(tc.src)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", tc.src, err)
+		}
+		got := RenderICU(w)
+		if got != tc.want {
+			t.Errorf("src=%q\n got: %q\nwant: %q", tc.src, got, tc.want)
+		}
 	}
 }
 
