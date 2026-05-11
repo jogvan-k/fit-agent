@@ -1005,3 +1005,8 @@ dependencies.
 - [ ] `internal/templates/skills/training-session-coach/SKILL.md` skeleton
 - [ ] `internal/templates/ATHLETE-PROFILE.md.tmpl` with placeholders
 - [ ] `internal/templates/README.md.tmpl` documenting ownership + commands
+
+## Additional features to add
+- [ ] config specifying if imperial or metric units are preferred. Initialized with init command
+- [ ] workspace path specify as part of init command. Default shown is ~/.openclaw/workspace
+- [ ] cross platform compatibility. Suppory MacOS and Windows.
