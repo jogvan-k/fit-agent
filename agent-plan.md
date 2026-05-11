@@ -1010,3 +1010,4 @@ dependencies.
 - [ ] config specifying if imperial or metric units are preferred. Initialized with init command
 - [ ] workspace path specify as part of init command. Default shown is ~/.openclaw/workspace
 - [ ] cross platform compatibility. Suppory MacOS and Windows.
+- [ ] support programmable strength workout sessions
