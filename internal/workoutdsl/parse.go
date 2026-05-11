@@ -23,11 +23,23 @@ func (e *ParseError) Error() string {
 func Parse(src string) (*Workout, error) {
 	w := &Workout{}
 	lines := strings.Split(src, "\n")
-	for i, raw := range lines {
+	for i := 0; i < len(lines); i++ {
+		raw := lines[i]
 		lineNo := i + 1
 		line := strings.TrimRight(raw, " \t\r")
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		// Block-style repeat header: a line that is just "Nx" (optionally
+		// with a trailing "-- note"), with no parenthesised body.
+		if reps, note, ok := tryBlockRepeatHeader(trimmed); ok {
+			step, consumed, err := parseBlockRepeat(lines, i, reps, note, lineNo)
+			if err != nil {
+				return nil, err
+			}
+			w.Steps = append(w.Steps, *step)
+			i += consumed - 1 // for-loop will i++
 			continue
 		}
 		if !strings.HasPrefix(trimmed, "-") {
@@ -56,6 +68,71 @@ func Parse(src string) (*Workout, error) {
 		w.Steps = append(w.Steps, *step)
 	}
 	return w, nil
+}
+
+// tryBlockRepeatHeader recognises a bare "Nx" line (optionally followed
+// by "-- note"). Returns (reps, note, true) on match; otherwise (0,"",false).
+func tryBlockRepeatHeader(trimmed string) (int, string, bool) {
+	body, note := splitNote(trimmed)
+	body = strings.TrimSpace(body)
+	if !strings.HasSuffix(body, "x") && !strings.HasSuffix(body, "X") {
+		return 0, "", false
+	}
+	num := body[:len(body)-1]
+	if num == "" {
+		return 0, "", false
+	}
+	n, err := strconv.Atoi(num)
+	if err != nil || n < 1 {
+		return 0, "", false
+	}
+	return n, note, true
+}
+
+// parseBlockRepeat consumes the header line at lines[start] plus the
+// following contiguous "- step" lines (terminated by a blank line, EOF,
+// or any non-step line). Returns the assembled Step and the number of
+// source lines consumed (header + body lines).
+func parseBlockRepeat(lines []string, start, reps int, note string, headerLineNo int) (*Step, int, error) {
+	steps := []SimpleStep{}
+	consumed := 1
+	for j := start + 1; j < len(lines); j++ {
+		raw := lines[j]
+		lineNo := j + 1
+		line := strings.TrimRight(raw, " \t\r")
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			consumed++ // include the blank line in the consumed range
+			break
+		}
+		if strings.HasPrefix(trimmed, "#") {
+			consumed++
+			continue
+		}
+		if !strings.HasPrefix(trimmed, "-") {
+			break
+		}
+		body := strings.TrimSpace(strings.TrimPrefix(trimmed, "-"))
+		if body == "" {
+			return nil, 0, &ParseError{Line: lineNo, Col: 1, Msg: "empty step in repeat block"}
+		}
+		body, sNote := splitNote(body)
+		simple, err := parseSimple(body, lineNo)
+		if err != nil {
+			return nil, 0, err
+		}
+		simple.Note = sNote
+		steps = append(steps, *simple)
+		consumed++
+	}
+	if len(steps) < 2 {
+		return nil, 0, &ParseError{Line: headerLineNo, Col: 1, Msg: fmt.Sprintf("repeat block %dx must contain at least 2 steps", reps)}
+	}
+	return &Step{
+		Line:   headerLineNo,
+		Repeat: &RepeatStep{Reps: reps, Steps: steps, Note: note},
+		Note:   note,
+	}, consumed, nil
 }
 
 func indexOfFirstNonSpace(s string) int {
@@ -176,7 +253,7 @@ func tryParseRepeat(body string, lineNo int) (*RepeatStep, error, bool) {
 		return nil, err, true
 	}
 	restStep.Note = restNote
-	return &RepeatStep{Reps: reps, Work: *work, Rest: *restStep}, nil, true
+	return &RepeatStep{Reps: reps, Steps: []SimpleStep{*work, *restStep}}, nil, true
 }
 
 func parseSimple(body string, lineNo int) (*SimpleStep, error) {

@@ -13,6 +13,26 @@ func RenderDSL(w *Workout) string {
 	}
 	var b strings.Builder
 	for _, s := range w.Steps {
+		// Multi-step (>2) repeats use the block form.
+		if s.Repeat != nil && len(s.Repeat.Steps) > 2 {
+			r := s.Repeat
+			fmt.Fprintf(&b, "%dx", r.Reps)
+			if s.Note != "" {
+				b.WriteString(" -- ")
+				b.WriteString(s.Note)
+			}
+			b.WriteString("\n")
+			for _, sub := range r.Steps {
+				b.WriteString("- ")
+				b.WriteString(renderSimple(sub))
+				if sub.Note != "" {
+					b.WriteString(" -- ")
+					b.WriteString(sub.Note)
+				}
+				b.WriteString("\n")
+			}
+			continue
+		}
 		b.WriteString("- ")
 		b.WriteString(renderStepBody(s))
 		if s.Note != "" {
@@ -30,15 +50,22 @@ func renderStepBody(s Step) string {
 		return renderSimple(*s.Simple)
 	case s.Repeat != nil:
 		r := s.Repeat
-		work := renderSimple(r.Work)
-		if r.Work.Note != "" {
-			work += " -- " + r.Work.Note
+		// Inline form is only used for exactly two sub-steps. Multi-step
+		// repeats are rendered separately by RenderDSL using the block
+		// form, so this branch shouldn't be reached for them; fall back
+		// to the inline header for safety.
+		if len(r.Steps) == 2 {
+			work := renderSimple(r.Steps[0])
+			if r.Steps[0].Note != "" {
+				work += " -- " + r.Steps[0].Note
+			}
+			rest := renderSimple(r.Steps[1])
+			if r.Steps[1].Note != "" {
+				rest += " -- " + r.Steps[1].Note
+			}
+			return fmt.Sprintf("%dx (%s / %s)", r.Reps, work, rest)
 		}
-		rest := renderSimple(r.Rest)
-		if r.Rest.Note != "" {
-			rest += " -- " + r.Rest.Note
-		}
-		return fmt.Sprintf("%dx (%s / %s)", r.Reps, work, rest)
+		return fmt.Sprintf("%dx", r.Reps)
 	case s.Ramp != nil:
 		return fmt.Sprintf("%s ramp %s-%s", s.Ramp.Duration.Raw, s.Ramp.From, s.Ramp.To)
 	default:
@@ -78,9 +105,12 @@ func RenderICU(w *Workout) string {
 		case s.Repeat != nil:
 			r := s.Repeat
 			fmt.Fprintf(&b, "%dx\n", r.Reps)
-			writeICUSimple(&b, r.Work, r.Work.Note)
-			b.WriteString("\n")
-			writeICUSimple(&b, r.Rest, r.Rest.Note)
+			for i, sub := range r.Steps {
+				if i > 0 {
+					b.WriteString("\n")
+				}
+				writeICUSimple(&b, sub, sub.Note)
+			}
 			if s.Note != "" {
 				b.WriteString("\n# ")
 				b.WriteString(s.Note)

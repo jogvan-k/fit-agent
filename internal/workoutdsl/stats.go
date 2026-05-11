@@ -25,8 +25,9 @@ func Summary(w *Workout) Stats {
 		case s.Simple != nil:
 			addSimple(&st, *s.Simple, 1)
 		case s.Repeat != nil:
-			addSimple(&st, s.Repeat.Work, s.Repeat.Reps)
-			addSimple(&st, s.Repeat.Rest, s.Repeat.Reps)
+			for _, sub := range s.Repeat.Steps {
+				addSimple(&st, sub, s.Repeat.Reps)
+			}
 		case s.Ramp != nil:
 			st.HasRamp = true
 			st.TotalSeconds += s.Ramp.Duration.Seconds

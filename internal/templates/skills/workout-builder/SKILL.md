@@ -117,10 +117,24 @@ are comments and ignored.
   - `- 45s Z5`
   - `- 2h Z1`
   - `- 15m 55%`
-- **Repeat block** — `- <reps>x (<work> / <rest>)`
+- **Repeat block (inline)** — `- <reps>x (<work> / <rest>)` for the
+  common two-step case (effort + recovery):
   - `- 5x (4m Z5 / 3m Z2)`
   - `- 8x (400m Z5 / 90s Z1)`
   - `- 3x (1m 150% / 1m 50%)`
+- **Repeat block (multi-step)** — for three or more sub-steps per rep,
+  use a header line `<reps>x` followed by one `- <step>` line per
+  sub-step. The block ends at a blank line, EOF, or any non-`-` line.
+  Useful for workouts with a finishing kick, walk-back recovery, etc.:
+
+  ```
+  4x
+  - 1km threshold
+  - 200m Z5
+  - 120s recovery
+  ```
+
+  An optional outer note attaches to the header: `4x -- main set`.
 - **Ramp** — `- <duration> ramp <fromZone>-<toZone>`
   - `- 20m ramp Z1-Z3`
 

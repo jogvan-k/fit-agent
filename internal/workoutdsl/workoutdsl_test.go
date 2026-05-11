@@ -39,11 +39,11 @@ func TestParseRepeat(t *testing.T) {
 	if r.Reps != 5 {
 		t.Errorf("reps=%d", r.Reps)
 	}
-	if r.Work.Amount.Duration.Seconds != 240 || r.Work.Intensity.Zone.N != 5 {
-		t.Errorf("work=%+v", r.Work)
+	if r.Steps[0].Amount.Duration.Seconds != 240 || r.Steps[0].Intensity.Zone.N != 5 {
+		t.Errorf("work=%+v", r.Steps[0])
 	}
-	if r.Rest.Amount.Duration.Seconds != 180 || r.Rest.Intensity.Zone.N != 2 {
-		t.Errorf("rest=%+v", r.Rest)
+	if r.Steps[1].Amount.Duration.Seconds != 180 || r.Steps[1].Intensity.Zone.N != 2 {
+		t.Errorf("rest=%+v", r.Steps[1])
 	}
 }
 
@@ -53,8 +53,8 @@ func TestParseRepeatWithDistance(t *testing.T) {
 		t.Fatalf("Parse: %v", err)
 	}
 	r := w.Steps[0].Repeat
-	if r.Work.Amount.Distance == nil || r.Work.Amount.Distance.Value != 400 || r.Work.Amount.Distance.Unit != "m" {
-		t.Errorf("work distance=%+v", r.Work.Amount.Distance)
+	if r.Steps[0].Amount.Distance == nil || r.Steps[0].Amount.Distance.Value != 400 || r.Steps[0].Amount.Distance.Unit != "m" {
+		t.Errorf("work distance=%+v", r.Steps[0].Amount.Distance)
 	}
 }
 
@@ -229,11 +229,11 @@ func TestParseRepeatWithInnerNote(t *testing.T) {
 	if r == nil {
 		t.Fatalf("expected repeat, got %+v", w.Steps[0])
 	}
-	if r.Work.Note != "hold steady" {
-		t.Errorf("work note=%q", r.Work.Note)
+	if r.Steps[0].Note != "hold steady" {
+		t.Errorf("work note=%q", r.Steps[0].Note)
 	}
-	if r.Rest.Note != "recover" {
-		t.Errorf("rest note=%q", r.Rest.Note)
+	if r.Steps[1].Note != "recover" {
+		t.Errorf("rest note=%q", r.Steps[1].Note)
 	}
 	// Round-trip.
 	out := RenderDSL(w)
@@ -273,5 +273,129 @@ func TestParseDistanceEdgeCases(t *testing.T) {
 	}
 	if d := w.Steps[3].Simple.Amount.Distance; d == nil || d.Value != 100 || d.Unit != "y" {
 		t.Errorf("100y: %+v", d)
+	}
+}
+
+func TestParseBlockRepeatThreeSteps(t *testing.T) {
+	src := "4x\n- 1km threshold\n- 200m Z5\n- 120s recovery\n"
+	w, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(w.Steps) != 1 || w.Steps[0].Repeat == nil {
+		t.Fatalf("expected one repeat, got %+v", w.Steps)
+	}
+	r := w.Steps[0].Repeat
+	if r.Reps != 4 {
+		t.Errorf("reps=%d want 4", r.Reps)
+	}
+	if len(r.Steps) != 3 {
+		t.Fatalf("steps=%d want 3", len(r.Steps))
+	}
+	if d := r.Steps[0].Amount.Distance; d == nil || d.Value != 1 || d.Unit != "km" {
+		t.Errorf("step0 distance=%+v", d)
+	}
+	if r.Steps[0].Intensity.Named != "threshold" {
+		t.Errorf("step0 intensity=%+v", r.Steps[0].Intensity)
+	}
+	if d := r.Steps[1].Amount.Distance; d == nil || d.Value != 200 || d.Unit != "m" {
+		t.Errorf("step1 distance=%+v", d)
+	}
+	if r.Steps[2].Amount.Duration == nil || r.Steps[2].Amount.Duration.Seconds != 120 {
+		t.Errorf("step2 duration=%+v", r.Steps[2].Amount)
+	}
+	if r.Steps[2].Intensity.Named != "recovery" {
+		t.Errorf("step2 intensity=%+v", r.Steps[2].Intensity)
+	}
+}
+
+func TestParseBlockRepeatTerminatedByBlankLine(t *testing.T) {
+	src := "- 2km easy\n\n4x\n- 1km threshold\n- 200m Z5\n- 120s recovery\n\n- 1km easy\n"
+	w, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(w.Steps) != 3 {
+		t.Fatalf("steps=%d want 3", len(w.Steps))
+	}
+	if w.Steps[0].Simple == nil {
+		t.Errorf("step0 should be simple, got %+v", w.Steps[0])
+	}
+	if w.Steps[1].Repeat == nil || len(w.Steps[1].Repeat.Steps) != 3 {
+		t.Errorf("step1 should be 3-step repeat, got %+v", w.Steps[1])
+	}
+	if w.Steps[2].Simple == nil {
+		t.Errorf("step2 should be simple, got %+v", w.Steps[2])
+	}
+}
+
+func TestParseBlockRepeatTooShort(t *testing.T) {
+	// A block-form Nx header followed by only one step is an error;
+	// repeats need at least two sub-steps to be meaningful.
+	_, err := Parse("3x\n- 1km Z5\n")
+	if err == nil {
+		t.Fatalf("expected error for single-step repeat block")
+	}
+	if !strings.Contains(err.Error(), "at least 2 steps") {
+		t.Errorf("err=%q", err.Error())
+	}
+}
+
+func TestParseBlockRepeatWithOuterNote(t *testing.T) {
+	src := "3x -- main set\n- 1km threshold\n- 200m Z5\n- 90s recovery\n"
+	w, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if w.Steps[0].Note != "main set" {
+		t.Errorf("note=%q", w.Steps[0].Note)
+	}
+	if w.Steps[0].Repeat == nil || len(w.Steps[0].Repeat.Steps) != 3 {
+		t.Fatalf("expected 3-step repeat")
+	}
+}
+
+func TestRoundTripBlockRepeat(t *testing.T) {
+	// Multi-step repeats round-trip via the block form.
+	src := "3x\n- 1km threshold\n- 200m Z5\n- 90s recovery\n"
+	w, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	out := RenderDSL(w)
+	if out != src {
+		t.Errorf("round-trip mismatch:\n got: %q\nwant: %q", out, src)
+	}
+	w2, err := Parse(out)
+	if err != nil {
+		t.Fatalf("Parse(out): %v", err)
+	}
+	if got := RenderDSL(w2); got != out {
+		t.Errorf("second round-trip diverged:\n got: %q\nwant: %q", got, out)
+	}
+}
+
+func TestRenderICUBlockRepeat(t *testing.T) {
+	src := "3x\n- 1km threshold\n- 200m Z5\n- 90s recovery\n"
+	w, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	got := RenderICU(w)
+	want := "3x\n- 1km threshold\n- 200m Z5\n- 90s recovery\n"
+	if got != want {
+		t.Errorf("RenderICU mismatch:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestSummaryBlockRepeat(t *testing.T) {
+	// 4x of (60s + 30s + 120s) = 4 * 210 = 840s.
+	w, err := Parse("4x\n- 60s Z5\n- 30s Z5\n- 120s recovery\n")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	s := Summary(w)
+	if s.TotalSeconds != 4*(60+30+120) {
+		t.Errorf("TotalSeconds=%d want %d", s.TotalSeconds, 4*(60+30+120))
 	}
 }
