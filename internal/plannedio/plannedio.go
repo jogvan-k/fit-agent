@@ -64,6 +64,9 @@ type WorkoutMeta struct {
 	Type        string `yaml:"type"`
 	MovingTimeS int    `yaml:"moving_time_s,omitempty"`
 	IcuEventID  *int64 `yaml:"icu_event_id"` // pointer so we can distinguish null from 0
+	// Description is a raw intervals.icu workout description used verbatim
+	// when no fit-workout DSL block is present. DSL takes precedence.
+	Description string `yaml:"description,omitempty"`
 }
 
 // Workout joins a frontmatter entry with its body section.
