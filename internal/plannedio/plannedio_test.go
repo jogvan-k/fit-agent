@@ -121,3 +121,43 @@ func TestStampEventIDUnknownName(t *testing.T) {
 		t.Errorf("expected error for unknown workout name")
 	}
 }
+
+func TestStampCompleted(t *testing.T) {
+	src := `---
+fit-agent:
+  kind: planned-workout-day
+  date: 2026-05-12
+workouts:
+  - name: "15 km Carrera larga"
+    type: Run
+    moving_time_s: 5400
+    icu_event_id: 109278495
+---
+
+## 15 km Carrera larga
+
+Easy run.
+`
+	got, err := StampCompleted(src)
+	if err != nil {
+		t.Fatalf("StampCompleted: %v", err)
+	}
+	if !strings.Contains(got, "completed: true") {
+		t.Errorf("expected 'completed: true' in output:\n%s", got)
+	}
+	// Idempotent: stamping again should not duplicate.
+	got2, err := StampCompleted(got)
+	if err != nil {
+		t.Fatalf("StampCompleted (2nd): %v", err)
+	}
+	if strings.Count(got2, "completed: true") != 1 {
+		t.Errorf("expected exactly one 'completed: true', got:\n%s", got2)
+	}
+	// Prose and other fields preserved.
+	if !strings.Contains(got, "icu_event_id: 109278495") {
+		t.Errorf("icu_event_id lost")
+	}
+	if !strings.Contains(got, "Easy run.") {
+		t.Errorf("prose lost")
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -229,5 +230,53 @@ func TestFormatFloat(t *testing.T) {
 		if got := formatFloat(tc.f, tc.prec); got != tc.want {
 			t.Errorf("formatFloat(%v, %d) = %s, want %s", tc.f, tc.prec, got, tc.want)
 		}
+	}
+}
+
+func TestICUBlockCompletedFlag(t *testing.T) {
+	loc := mustLoadLocation(t, "Europe/Madrid")
+	date := time.Date(2026, 5, 12, 0, 0, 0, 0, loc)
+	paired := "i147416102"
+	block := ICUBlock(ICUBlockInput{
+		Date: date,
+		Events: []icu.Event{
+			{
+				ID:               109278495,
+				Name:             "15 km Carrera larga",
+				Type:             "Run",
+				Category:         "WORKOUT",
+				MovingTime:       4631,
+				StartDateLocal:   "2026-05-12T00:00:00",
+				PairedActivityID: paired,
+			},
+		},
+	})
+	s := string(block)
+	if !strings.Contains(s, "completed: true") {
+		t.Errorf("expected 'completed: true' in ICU block:\n%s", s)
+	}
+	if !strings.Contains(s, "icu_activity_id: "+paired) {
+		t.Errorf("expected 'icu_activity_id: %s' in ICU block:\n%s", paired, s)
+	}
+}
+
+func TestICUBlockNoCompletedFlagWhenUnpaired(t *testing.T) {
+	loc := mustLoadLocation(t, "Europe/Madrid")
+	date := time.Date(2026, 5, 13, 0, 0, 0, 0, loc)
+	block := ICUBlock(ICUBlockInput{
+		Date: date,
+		Events: []icu.Event{
+			{
+				ID:             109417301,
+				Name:           "Repeticiones de 200",
+				Type:           "Run",
+				Category:       "WORKOUT",
+				StartDateLocal: "2026-05-13T00:00:00",
+			},
+		},
+	})
+	s := string(block)
+	if strings.Contains(s, "completed") {
+		t.Errorf("expected no 'completed' in ICU block for unmatched event:\n%s", s)
 	}
 }
