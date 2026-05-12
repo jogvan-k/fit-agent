@@ -1,6 +1,7 @@
 package workoutdsl
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -536,7 +537,88 @@ func TestPaceInvalidInputs(t *testing.T) {
 	}
 }
 
+func TestRenderWorkoutDoc(t *testing.T) {
+	src := "4x\n- 1km 3:55/km\n- 200m 3:30/km\n- 2m recovery\n"
+	w, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	raw, err := RenderWorkoutDoc(w)
+	if err != nil {
+		t.Fatalf("RenderWorkoutDoc: %v", err)
+	}
+	var doc WorkoutDoc
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(doc.Steps) != 1 {
+		t.Fatalf("steps=%d want 1", len(doc.Steps))
+	}
+	rep := doc.Steps[0]
+	if rep.Reps != 4 {
+		t.Errorf("reps=%d want 4", rep.Reps)
+	}
+	if len(rep.Steps) != 3 {
+		t.Fatalf("sub-steps=%d want 3", len(rep.Steps))
+	}
+	// 1km at 3:55/km = 235 secs/km
+	work := rep.Steps[0]
+	if work.Distance != 1000 {
+		t.Errorf("work.Distance=%d want 1000", work.Distance)
+	}
+	if work.Pace == nil || work.Pace.Units != "secs_km" || work.Pace.Value != 235 {
+		t.Errorf("work.Pace=%+v", work.Pace)
+	}
+	if work.Duration != 235 { // 1000m * 235 / 1000
+		t.Errorf("work.Duration=%d want 235", work.Duration)
+	}
+	// 200m at 3:30/km = 210 secs/km
+	kick := rep.Steps[1]
+	if kick.Distance != 200 {
+		t.Errorf("kick.Distance=%d want 200", kick.Distance)
+	}
+	if kick.Pace == nil || kick.Pace.Value != 210 {
+		t.Errorf("kick.Pace=%+v", kick.Pace)
+	}
+	if kick.Duration != 42 { // 200 * 210 / 1000
+		t.Errorf("kick.Duration=%d want 42", kick.Duration)
+	}
+	// recovery: 2m duration, no pace target
+	rec := rep.Steps[2]
+	if rec.Duration != 120 {
+		t.Errorf("rec.Duration=%d want 120", rec.Duration)
+	}
+	if rec.Pace != nil {
+		t.Errorf("rec.Pace should be nil, got %+v", rec.Pace)
+	}
+}
+
+func TestHasTargets(t *testing.T) {
+	cases := []struct {
+		src  string
+		want bool
+	}{
+		{"- 1km 3:55/km\n", true},
+		{"- 10m Z2\n", true},
+		{"- 15m 55%\n", true},
+		{"- 11km easy\n", false},
+		{"- 2km recovery\n", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.src, func(t *testing.T) {
+			w, err := Parse(tc.src)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if got := HasTargets(w); got != tc.want {
+				t.Errorf("HasTargets=%v want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSummaryBlockRepeat(t *testing.T) {
+	// 4x of (60s + 30s + 120s) = 4 * 210 = 840s.
 	w, err := Parse("4x\n- 60s Z5\n- 30s Z5\n- 120s recovery\n")
 	if err != nil {
 		t.Fatalf("Parse: %v", err)

@@ -423,12 +423,22 @@ func diffReason(have, want icu.Event) string {
 // yet be expressed in the DSL).
 func buildEvent(date string, w plannedio.Workout) (icu.Event, error) {
 	var desc string
+	var workoutDoc json.RawMessage
 	if w.DSL != "" {
 		parsed, err := workoutdsl.Parse(w.DSL)
 		if err != nil {
 			return icu.Event{}, fmt.Errorf("dsl: %w", err)
 		}
 		desc = strings.TrimRight(workoutdsl.RenderICU(parsed), "\n")
+		// Build structured workout_doc so targets (pace, zone, %) are
+		// forwarded to Garmin rather than left to ICU's text parser.
+		if workoutdsl.HasTargets(parsed) {
+			doc, err := workoutdsl.RenderWorkoutDoc(parsed)
+			if err != nil {
+				return icu.Event{}, fmt.Errorf("workout_doc: %w", err)
+			}
+			workoutDoc = doc
+		}
 	} else if w.Meta.Description != "" {
 		desc = strings.TrimRight(w.Meta.Description, "\n")
 	}
@@ -439,6 +449,7 @@ func buildEvent(date string, w plannedio.Workout) (icu.Event, error) {
 		Type:           w.Meta.Type,
 		Description:    desc,
 		MovingTime:     w.Meta.MovingTimeS,
+		WorkoutDoc:     workoutDoc,
 	}, nil
 }
 
