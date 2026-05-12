@@ -233,9 +233,9 @@ func tryParseRepeat(body string, lineNo int) (*RepeatStep, error, bool) {
 		return nil, &ParseError{Line: lineNo, Col: 1, Msg: "missing closing ')' in repeat"}, true
 	}
 	inner := rest[1:end]
-	parts := strings.SplitN(inner, "/", 2)
+	parts := strings.SplitN(inner, " / ", 2)
 	if len(parts) != 2 {
-		return nil, &ParseError{Line: lineNo, Col: 1, Msg: "repeat body must be 'work / rest'"}, true
+		return nil, &ParseError{Line: lineNo, Col: 1, Msg: "repeat body must be 'work / rest' (space around '/')"}, true
 	}
 	reps, _ := strconv.Atoi(repsStr)
 	if reps < 1 {
@@ -399,11 +399,49 @@ func parseIntensity(tok string, lineNo int) (Intensity, error) {
 		}
 		return Intensity{Zone: &Zone{N: n}}, nil
 	}
+	if p, ok := tryParsePace(tok); ok {
+		return Intensity{Pace: p}, nil
+	}
 	low := strings.ToLower(tok)
 	if namedIntensities[low] {
 		return Intensity{Named: low}, nil
 	}
 	return Intensity{}, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("unknown intensity %q", tok)}
+}
+
+// tryParsePace parses a pace token of the form "M:SS", "MM:SS",
+// optionally suffixed with "/km" or "/mi" (default km).
+// Examples: "3:55", "3:55/km", "4:30/mi", "10:00/mi".
+func tryParsePace(tok string) (*Pace, bool) {
+	unit := "km"
+	s := tok
+	if idx := strings.LastIndex(s, "/"); idx >= 0 {
+		u := strings.ToLower(s[idx+1:])
+		if u != "km" && u != "mi" {
+			return nil, false
+		}
+		unit = u
+		s = s[:idx]
+	}
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) != 2 {
+		return nil, false
+	}
+	min, err1 := strconv.Atoi(parts[0])
+	sec, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return nil, false
+	}
+	if min < 0 || sec < 0 || sec >= 60 {
+		return nil, false
+	}
+	total := min*60 + sec
+	if total <= 0 {
+		return nil, false
+	}
+	// Canonical raw form always includes the unit.
+	raw := fmt.Sprintf("%d:%02d/%s", min, sec, unit)
+	return &Pace{Seconds: total, Unit: unit, Raw: raw}, true
 }
 
 func parseZoneRange(tok string, lineNo int) (Zone, Zone, error) {

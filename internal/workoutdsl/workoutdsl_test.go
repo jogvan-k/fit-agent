@@ -417,8 +417,126 @@ func TestRenderICUMetresSuffix(t *testing.T) {
 	}
 }
 
+func TestParsePace(t *testing.T) {
+	cases := []struct {
+		src      string
+		wantRaw  string
+		wantSecs int
+		wantUnit string
+	}{
+		{"- 1km 3:55/km\n", "3:55/km", 235, "km"},
+		{"- 200m 3:30/km\n", "3:30/km", 210, "km"},
+		{"- 5km 4:15/km\n", "4:15/km", 255, "km"},
+		{"- 1km 3:55\n", "3:55/km", 235, "km"}, // implicit /km
+		{"- 1600m 6:30/mi\n", "6:30/mi", 390, "mi"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.src, func(t *testing.T) {
+			w, err := Parse(tc.src)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			p := w.Steps[0].Simple.Intensity.Pace
+			if p == nil {
+				t.Fatalf("expected Pace intensity, got %+v", w.Steps[0].Simple.Intensity)
+			}
+			if p.Raw != tc.wantRaw {
+				t.Errorf("Raw=%q want %q", p.Raw, tc.wantRaw)
+			}
+			if p.Seconds != tc.wantSecs {
+				t.Errorf("Seconds=%d want %d", p.Seconds, tc.wantSecs)
+			}
+			if p.Unit != tc.wantUnit {
+				t.Errorf("Unit=%q want %q", p.Unit, tc.wantUnit)
+			}
+		})
+	}
+}
+
+func TestPaceRoundTrip(t *testing.T) {
+	cases := []string{
+		"- 1km 3:55/km\n",
+		"- 200m 3:30/km\n",
+		"- 1600m 6:30/mi\n",
+		"- 1km 3:55/km -- aim for negative split\n",
+	}
+	for _, src := range cases {
+		t.Run(src, func(t *testing.T) {
+			w, err := Parse(src)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			out := RenderDSL(w)
+			if out != src {
+				t.Errorf("round-trip:\n got: %q\nwant: %q", out, src)
+			}
+		})
+	}
+}
+
+func TestPaceRenderICU(t *testing.T) {
+	cases := []struct {
+		src  string
+		want string
+	}{
+		{
+			// Simple pace step.
+			"- 1km 3:55/km\n",
+			"- 1km 3:55/km\n",
+		},
+		{
+			// Metres convert to mtr.
+			"- 200m 3:30/km\n",
+			"- 200mtr 3:30/km\n",
+		},
+		{
+			// Block repeat with pace targets — mirrors Repeticiones de 200 workout.
+			"4x\n- 1km 3:55/km\n- 200m 3:30/km\n- 2m recovery\n",
+			"4x\n- 1km 3:55/km\n- 200mtr 3:30/km\n- 2m recovery\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.src, func(t *testing.T) {
+			w, err := Parse(tc.src)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			got := RenderICU(w)
+			if got != tc.want {
+				t.Errorf("RenderICU:\n got: %q\nwant: %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPaceInRepeat(t *testing.T) {
+	// Inline repeat with pace.
+	w, err := Parse("- 4x (1km 3:55/km / 2m recovery)\n")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	r := w.Steps[0].Repeat
+	if r == nil {
+		t.Fatalf("expected repeat")
+	}
+	if r.Steps[0].Intensity.Pace == nil || r.Steps[0].Intensity.Pace.Raw != "3:55/km" {
+		t.Errorf("work pace=%+v", r.Steps[0].Intensity)
+	}
+}
+
+func TestPaceInvalidInputs(t *testing.T) {
+	// A token that looks like a pace but has bad seconds (>= 60) should
+	// fall through to "unknown intensity".
+	_, err := Parse("- 1km 3:60/km\n")
+	if err == nil {
+		t.Fatalf("expected error for 3:60/km")
+	}
+	if !strings.Contains(err.Error(), "unknown intensity") {
+		t.Errorf("err=%q", err.Error())
+	}
+}
+
 func TestSummaryBlockRepeat(t *testing.T) {
-	// 4x of (60s + 30s + 120s) = 4 * 210 = 840s.
 	w, err := Parse("4x\n- 60s Z5\n- 30s Z5\n- 120s recovery\n")
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
