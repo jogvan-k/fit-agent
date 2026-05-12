@@ -1,6 +1,7 @@
 package workoutdsl
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -376,15 +377,243 @@ func TestRoundTripBlockRepeat(t *testing.T) {
 }
 
 func TestRenderICUBlockRepeat(t *testing.T) {
+	// 200m should be emitted as 200mtr in ICU output so intervals.icu
+	// doesn't misinterpret it as 200 minutes.
 	src := "3x\n- 1km threshold\n- 200m Z5\n- 90s recovery\n"
 	w, err := Parse(src)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
 	got := RenderICU(w)
-	want := "3x\n- 1km threshold\n- 200m Z5\n- 90s recovery\n"
+	want := "3x\n- 1km threshold\n- 200mtr Z5\n- 90s recovery\n"
 	if got != want {
 		t.Errorf("RenderICU mismatch:\n got: %q\nwant: %q", got, want)
+	}
+}
+
+func TestRenderICUMetresSuffix(t *testing.T) {
+	// Bare 'm' distances must be emitted as 'mtr' in ICU output.
+	// intervals.icu treats 'm' as minutes; 'mtr' is the unambiguous metres suffix.
+	cases := []struct {
+		src  string
+		want string
+	}{
+		{"- 400m Z5\n", "- 400mtr Z5\n"},
+		{"- 300m threshold\n", "- 300mtr threshold\n"},
+		// km and y should pass through unchanged.
+		{"- 1km easy\n", "- 1km easy\n"},
+		{"- 100y easy\n", "- 100y easy\n"},
+		// Duration 'm' (minutes) must not be affected.
+		{"- 5m easy\n", "- 5m easy\n"},
+	}
+	for _, tc := range cases {
+		w, err := Parse(tc.src)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", tc.src, err)
+		}
+		got := RenderICU(w)
+		if got != tc.want {
+			t.Errorf("src=%q\n got: %q\nwant: %q", tc.src, got, tc.want)
+		}
+	}
+}
+
+func TestParsePace(t *testing.T) {
+	cases := []struct {
+		src      string
+		wantRaw  string
+		wantSecs int
+		wantUnit string
+	}{
+		{"- 1km 3:55/km\n", "3:55/km", 235, "km"},
+		{"- 200m 3:30/km\n", "3:30/km", 210, "km"},
+		{"- 5km 4:15/km\n", "4:15/km", 255, "km"},
+		{"- 1km 3:55\n", "3:55/km", 235, "km"}, // implicit /km
+		{"- 1600m 6:30/mi\n", "6:30/mi", 390, "mi"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.src, func(t *testing.T) {
+			w, err := Parse(tc.src)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			p := w.Steps[0].Simple.Intensity.Pace
+			if p == nil {
+				t.Fatalf("expected Pace intensity, got %+v", w.Steps[0].Simple.Intensity)
+			}
+			if p.Raw != tc.wantRaw {
+				t.Errorf("Raw=%q want %q", p.Raw, tc.wantRaw)
+			}
+			if p.Seconds != tc.wantSecs {
+				t.Errorf("Seconds=%d want %d", p.Seconds, tc.wantSecs)
+			}
+			if p.Unit != tc.wantUnit {
+				t.Errorf("Unit=%q want %q", p.Unit, tc.wantUnit)
+			}
+		})
+	}
+}
+
+func TestPaceRoundTrip(t *testing.T) {
+	cases := []string{
+		"- 1km 3:55/km\n",
+		"- 200m 3:30/km\n",
+		"- 1600m 6:30/mi\n",
+		"- 1km 3:55/km -- aim for negative split\n",
+	}
+	for _, src := range cases {
+		t.Run(src, func(t *testing.T) {
+			w, err := Parse(src)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			out := RenderDSL(w)
+			if out != src {
+				t.Errorf("round-trip:\n got: %q\nwant: %q", out, src)
+			}
+		})
+	}
+}
+
+func TestPaceRenderICU(t *testing.T) {
+	cases := []struct {
+		src  string
+		want string
+	}{
+		{
+			// Simple pace step.
+			"- 1km 3:55/km\n",
+			"- 1km 3:55/km\n",
+		},
+		{
+			// Metres convert to mtr.
+			"- 200m 3:30/km\n",
+			"- 200mtr 3:30/km\n",
+		},
+		{
+			// Block repeat with pace targets — mirrors Repeticiones de 200 workout.
+			"4x\n- 1km 3:55/km\n- 200m 3:30/km\n- 2m recovery\n",
+			"4x\n- 1km 3:55/km\n- 200mtr 3:30/km\n- 2m recovery\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.src, func(t *testing.T) {
+			w, err := Parse(tc.src)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			got := RenderICU(w)
+			if got != tc.want {
+				t.Errorf("RenderICU:\n got: %q\nwant: %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPaceInRepeat(t *testing.T) {
+	// Inline repeat with pace.
+	w, err := Parse("- 4x (1km 3:55/km / 2m recovery)\n")
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	r := w.Steps[0].Repeat
+	if r == nil {
+		t.Fatalf("expected repeat")
+	}
+	if r.Steps[0].Intensity.Pace == nil || r.Steps[0].Intensity.Pace.Raw != "3:55/km" {
+		t.Errorf("work pace=%+v", r.Steps[0].Intensity)
+	}
+}
+
+func TestPaceInvalidInputs(t *testing.T) {
+	// A token that looks like a pace but has bad seconds (>= 60) should
+	// fall through to "unknown intensity".
+	_, err := Parse("- 1km 3:60/km\n")
+	if err == nil {
+		t.Fatalf("expected error for 3:60/km")
+	}
+	if !strings.Contains(err.Error(), "unknown intensity") {
+		t.Errorf("err=%q", err.Error())
+	}
+}
+
+func TestRenderWorkoutDoc(t *testing.T) {
+	src := "4x\n- 1km 3:55/km\n- 200m 3:30/km\n- 2m recovery\n"
+	w, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	raw, err := RenderWorkoutDoc(w)
+	if err != nil {
+		t.Fatalf("RenderWorkoutDoc: %v", err)
+	}
+	var doc WorkoutDoc
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if len(doc.Steps) != 1 {
+		t.Fatalf("steps=%d want 1", len(doc.Steps))
+	}
+	rep := doc.Steps[0]
+	if rep.Reps != 4 {
+		t.Errorf("reps=%d want 4", rep.Reps)
+	}
+	if len(rep.Steps) != 3 {
+		t.Fatalf("sub-steps=%d want 3", len(rep.Steps))
+	}
+	// 1km at 3:55/km = 235 secs/km
+	work := rep.Steps[0]
+	if work.Distance != 1000 {
+		t.Errorf("work.Distance=%d want 1000", work.Distance)
+	}
+	if work.Pace == nil || work.Pace.Units != "secs_km" || work.Pace.Value != 235 {
+		t.Errorf("work.Pace=%+v", work.Pace)
+	}
+	if work.Duration != 235 { // 1000m * 235 / 1000
+		t.Errorf("work.Duration=%d want 235", work.Duration)
+	}
+	// 200m at 3:30/km = 210 secs/km
+	kick := rep.Steps[1]
+	if kick.Distance != 200 {
+		t.Errorf("kick.Distance=%d want 200", kick.Distance)
+	}
+	if kick.Pace == nil || kick.Pace.Value != 210 {
+		t.Errorf("kick.Pace=%+v", kick.Pace)
+	}
+	if kick.Duration != 42 { // 200 * 210 / 1000
+		t.Errorf("kick.Duration=%d want 42", kick.Duration)
+	}
+	// recovery: 2m duration, no pace target
+	rec := rep.Steps[2]
+	if rec.Duration != 120 {
+		t.Errorf("rec.Duration=%d want 120", rec.Duration)
+	}
+	if rec.Pace != nil {
+		t.Errorf("rec.Pace should be nil, got %+v", rec.Pace)
+	}
+}
+
+func TestHasTargets(t *testing.T) {
+	cases := []struct {
+		src  string
+		want bool
+	}{
+		{"- 1km 3:55/km\n", true},
+		{"- 10m Z2\n", true},
+		{"- 15m 55%\n", true},
+		{"- 11km easy\n", false},
+		{"- 2km recovery\n", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.src, func(t *testing.T) {
+			w, err := Parse(tc.src)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if got := HasTargets(w); got != tc.want {
+				t.Errorf("HasTargets=%v want %v", got, tc.want)
+			}
+		})
 	}
 }
 

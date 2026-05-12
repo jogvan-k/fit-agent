@@ -64,6 +64,9 @@ type WorkoutMeta struct {
 	Type        string `yaml:"type"`
 	MovingTimeS int    `yaml:"moving_time_s,omitempty"`
 	IcuEventID  *int64 `yaml:"icu_event_id"` // pointer so we can distinguish null from 0
+	// Description is a raw intervals.icu workout description used verbatim
+	// when no fit-workout DSL block is present. DSL takes precedence.
+	Description string `yaml:"description,omitempty"`
 }
 
 // Workout joins a frontmatter entry with its body section.
@@ -299,4 +302,85 @@ func leadingSpaces(s string) string {
 		}
 	}
 	return s
+}
+
+// StampCompleted rewrites src to set "completed: true" in the
+// fit-agent: frontmatter section. This is called by the render step
+// when a paired_activity_id is detected on the ICU event, making the
+// completion status visible without parsing the machine-owned ICU block.
+//
+// Like StampEventID, this is a textual edit to preserve formatting.
+func StampCompleted(src string) (string, error) {
+	front, body, err := splitFrontmatter(src)
+	if err != nil {
+		return "", err
+	}
+	if front == "" {
+		return "", fmt.Errorf("no frontmatter to stamp into")
+	}
+	newFront := stampCompletedInFront(front)
+	var out bytes.Buffer
+	out.WriteString("---\n")
+	out.WriteString(newFront)
+	if !strings.HasSuffix(newFront, "\n") {
+		out.WriteString("\n")
+	}
+	out.WriteString("---\n")
+	out.WriteString(body)
+	return out.String(), nil
+}
+
+// stampCompletedInFront sets or replaces "completed: true" inside the
+// fit-agent: block of the frontmatter YAML.
+func stampCompletedInFront(front string) string {
+	lines := strings.Split(front, "\n")
+	fitAgentIdx := -1
+	for i, ln := range lines {
+		if strings.TrimSpace(ln) == "fit-agent:" {
+			fitAgentIdx = i
+			break
+		}
+	}
+	if fitAgentIdx < 0 {
+		// No fit-agent block; return unchanged.
+		return front
+	}
+	// Determine the indent of fit-agent child fields.
+	fieldIndent := "  "
+	if fitAgentIdx+1 < len(lines) {
+		fieldIndent = leadingSpaces(lines[fitAgentIdx+1])
+		if fieldIndent == "" {
+			fieldIndent = "  "
+		}
+	}
+	completedLine := fieldIndent + "completed: true"
+	// Scan the fit-agent: block for an existing completed: field.
+	for j := fitAgentIdx + 1; j < len(lines); j++ {
+		ln := lines[j]
+		t := strings.TrimSpace(ln)
+		if t == "" {
+			break
+		}
+		// Stop when we hit a top-level key (no leading spaces / different indent level).
+		if len(ln) > 0 && ln[0] != ' ' {
+			break
+		}
+		if strings.HasPrefix(t, "completed:") {
+			lines[j] = completedLine
+			return strings.Join(lines, "\n")
+		}
+	}
+	// Not found: insert after the fit-agent: block's last field.
+	insertAt := fitAgentIdx + 1
+	for j := fitAgentIdx + 1; j < len(lines); j++ {
+		ln := lines[j]
+		if ln == "" || (len(ln) > 0 && ln[0] != ' ') {
+			break
+		}
+		insertAt = j + 1
+	}
+	out := append([]string{}, lines[:insertAt]...)
+	out = append(out, completedLine)
+	out = append(out, lines[insertAt:]...)
+	return strings.Join(out, "\n")
 }

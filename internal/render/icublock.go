@@ -113,6 +113,10 @@ func writeICUEvent(b *bytes.Buffer, ev icu.Event) {
 	if ev.Indoor != nil {
 		fmt.Fprintf(b, "    indoor: %t\n", *ev.Indoor)
 	}
+	if ev.PairedActivityID != "" {
+		fmt.Fprintf(b, "    completed: true\n")
+		fmt.Fprintf(b, "    icu_activity_id: %s\n", ev.PairedActivityID)
+	}
 	if desc := strings.TrimRight(ev.Description, "\n"); desc != "" {
 		b.WriteString("    description: ")
 		b.WriteString(yamlBlockScalar(desc, 4))

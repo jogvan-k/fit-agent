@@ -102,6 +102,10 @@ type Event struct {
 	// booleans). Stored as a pointer so omitempty still drops the field
 	// when icu doesn't send it.
 	Indoor *bool `json:"indoor,omitempty"`
+	// PairedActivityID is set by intervals.icu when an athlete activity
+	// has been matched to this planned event. A non-empty value means
+	// the workout has been completed.
+	PairedActivityID string `json:"paired_activity_id,omitempty"`
 	// WorkoutDoc is intervals.icu's structured workout representation.
 	// Historically the API returned a string; in 2026 the field became a
 	// JSON object ({"steps":[...]}). We keep it as raw JSON so decoding

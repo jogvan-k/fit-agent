@@ -5,6 +5,13 @@
 //
 // Grammar (v1):
 //
+// The grammar below is the machine-authoritative DSL spec.
+// internal/templates/skills/workout-builder/SKILL.md is the
+// human- and agent-facing spec and must be kept in sync with this
+// grammar. Every intensity type, amount unit, and named keyword
+// added here must also appear with an example in that skill file.
+// See AGENTS.md § "Extending the workout DSL".
+//
 //	workout      := { step }
 //	step         := simple | repeat | ramp
 //	simple       := "- " amount SP intensity [SP "--" SP note]
@@ -15,9 +22,10 @@
 //	amount       := duration | distance
 //	duration     := { INT ("h"|"m"|"s") }+
 //	distance     := INT ("m"|"km"|"y")
-//	intensity    := zone | namedIntensity | percent
+//	intensity    := zone | namedIntensity | percent | pace
 //	zone         := "Z" ("1".."6")
 //	percent      := INT "%"
+//	pace         := INT ":" INT [ "/" ("km" | "mi") ]
 //	namedIntensity := "recovery"|"easy"|"tempo"|"threshold"|"vo2"|"anaerobic"|"sprint"
 //
 // Blank lines and lines beginning with "#" are ignored.
@@ -88,6 +96,14 @@ type Intensity struct {
 	Zone    *Zone
 	Named   string // recovery|easy|tempo|threshold|vo2|anaerobic|sprint
 	Percent *int   // FTP percent
+	Pace    *Pace  // run pace target e.g. 3:55/km
+}
+
+// Pace is a target running pace expressed as seconds per unit distance.
+type Pace struct {
+	Seconds int    // total seconds per unit, e.g. 235 for 3:55
+	Unit    string // "km" or "mi"
+	Raw     string // canonical token, e.g. "3:55/km"
 }
 
 // Zone is Z1..Z6.
@@ -119,6 +135,8 @@ func (i Intensity) String() string {
 		return i.Named
 	case i.Percent != nil:
 		return fmt.Sprintf("%d%%", *i.Percent)
+	case i.Pace != nil:
+		return i.Pace.Raw
 	default:
 		return ""
 	}

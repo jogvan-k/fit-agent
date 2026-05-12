@@ -325,7 +325,8 @@ func Planned(ctx context.Context, c Context, r daterange.Range) (Stats, error) {
 
 // writePlannedDay renders the machine block for date and splices it
 // into the corresponding planned-workouts file, creating a default
-// skeleton when none exists.
+// skeleton when none exists. If any event has a paired activity,
+// completed: true is also stamped into the agent-owned frontmatter.
 func writePlannedDay(c Context, date time.Time, events []icu.Event) (Outcome, error) {
 	path := c.Layout.PlannedWorkoutDayPath(date)
 	block := render.ICUBlock(render.ICUBlockInput{
@@ -345,6 +346,20 @@ func writePlannedDay(c Context, date time.Time, events []icu.Event) (Outcome, er
 	}
 
 	updated := plannedio.SpliceICUBlock(existing, block)
+
+	// If any event on this day has a matched activity, stamp
+	// completed: true into the agent-owned frontmatter so agents and
+	// humans can see completion status without parsing the ICU block.
+	for _, ev := range events {
+		if ev.PairedActivityID != "" {
+			stamped, err := plannedio.StampCompleted(string(updated))
+			if err == nil {
+				updated = []byte(stamped)
+			}
+			break
+		}
+	}
+
 	return writeRendered(path, updated, c.DryRun)
 }
 

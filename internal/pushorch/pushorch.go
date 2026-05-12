@@ -138,10 +138,17 @@ func Plan(ctx context.Context, c Context, r daterange.Range) ([]Action, error) {
 			case w.Meta.IcuEventID != nil && *w.Meta.IcuEventID != 0:
 				match = byID[*w.Meta.IcuEventID]
 				if match == nil {
-					// id stamped in md but missing from cache: treat as
-					// stale, fall back to create. The icu update would
-					// otherwise 404.
-					c.logf("%s/%s: stamped id %d not found in cache, will create", day.Path, w.Meta.Name, *w.Meta.IcuEventID)
+					// id stamped in md but missing from cache: try to
+					// recover by date+name match to avoid creating a
+					// duplicate when the cache was cleared.
+					match = byKey[eventKey(day.Date+"T00:00:00", w.Meta.Name)]
+					if match != nil {
+						c.logf("%s/%s: stamped id %d not found in cache, recovered by date+name match (id=%d)",
+							day.Path, w.Meta.Name, *w.Meta.IcuEventID, match.ID)
+					} else {
+						c.logf("%s/%s: stamped id %d not found in cache, will create",
+							day.Path, w.Meta.Name, *w.Meta.IcuEventID)
+					}
 				}
 			default:
 				match = byKey[eventKey(day.Date+"T00:00:00", w.Meta.Name)]
@@ -409,13 +416,32 @@ func diffReason(have, want icu.Event) string {
 }
 
 // buildEvent renders the markdown workout into the icu.Event payload
-// that we will POST or PUT.
+// that we will POST or PUT. If the workout has a fit-workout DSL block
+// it is compiled to the ICU description format. When no DSL block is
+// present, the description field from the frontmatter YAML is used
+// verbatim (useful for workouts — e.g. strength circuits — that cannot
+// yet be expressed in the DSL).
 func buildEvent(date string, w plannedio.Workout) (icu.Event, error) {
-	parsed, err := workoutdsl.Parse(w.DSL)
-	if err != nil {
-		return icu.Event{}, fmt.Errorf("dsl: %w", err)
+	var desc string
+	var workoutDoc json.RawMessage
+	if w.DSL != "" {
+		parsed, err := workoutdsl.Parse(w.DSL)
+		if err != nil {
+			return icu.Event{}, fmt.Errorf("dsl: %w", err)
+		}
+		desc = strings.TrimRight(workoutdsl.RenderICU(parsed), "\n")
+		// Build structured workout_doc so targets (pace, zone, %) are
+		// forwarded to Garmin rather than left to ICU's text parser.
+		if workoutdsl.HasTargets(parsed) {
+			doc, err := workoutdsl.RenderWorkoutDoc(parsed)
+			if err != nil {
+				return icu.Event{}, fmt.Errorf("workout_doc: %w", err)
+			}
+			workoutDoc = doc
+		}
+	} else if w.Meta.Description != "" {
+		desc = strings.TrimRight(w.Meta.Description, "\n")
 	}
-	desc := strings.TrimRight(workoutdsl.RenderICU(parsed), "\n")
 	return icu.Event{
 		Category:       "WORKOUT",
 		StartDateLocal: date + "T00:00:00",
@@ -423,6 +449,7 @@ func buildEvent(date string, w plannedio.Workout) (icu.Event, error) {
 		Type:           w.Meta.Type,
 		Description:    desc,
 		MovingTime:     w.Meta.MovingTimeS,
+		WorkoutDoc:     workoutDoc,
 	}, nil
 }
 
