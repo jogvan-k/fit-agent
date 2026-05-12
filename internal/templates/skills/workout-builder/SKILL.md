@@ -141,12 +141,12 @@ For a same-day workout where the flag is absent, ask the athlete before
 including it in a reschedule — the activity may have been recorded but
 ICU pairing can lag by a sync cycle.
 
-## sync-workouts vs push-workouts
+## sync-workouts
 
-`push-workouts` is deprecated. Always use `fit-agent sync-workouts`
-instead — it runs push then pull in one step and keeps the local
-markdown files in sync with ICU. Use `--from`/`--to` flags to scope the
-date range when rescheduling a subset of the calendar:
+Always use `fit-agent sync-workouts` — it runs push then pull in one
+step and keeps the local markdown files in sync with ICU. Use
+`--from`/`--to` flags to scope the date range when rescheduling a
+subset of the calendar:
 
 ```bash
 fit-agent sync-workouts --from 2026-05-13 --to 2026-05-17 --dry-run
@@ -232,5 +232,5 @@ just write `400m` in the DSL as normal.
   missing, fall back to RPE/heart-rate language and say so.
 - Do not write to `fit-agent/activities/*.yaml` or
   `fit-agent/wellness/*.yaml` — those are machine-owned.
-- Do not run `fit-agent push-workouts` without showing the dry-run
+- Do not run `fit-agent sync-workouts` without showing the dry-run
   first.
