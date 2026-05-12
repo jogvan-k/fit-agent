@@ -15,6 +15,7 @@ import (
 
 	"github.com/jogvan-k/fit-agent/internal/daterange"
 	"github.com/jogvan-k/fit-agent/internal/icu"
+	"github.com/jogvan-k/fit-agent/internal/plannedio"
 	"github.com/jogvan-k/fit-agent/internal/workspace"
 )
 
@@ -242,4 +243,88 @@ func writeJSON(t *testing.T, path string, v any) {
 
 func date(y, m, d int) time.Time {
 	return time.Date(y, time.Month(m), d, 0, 0, 0, 0, time.UTC)
+}
+
+func TestBuildEventDescriptionFallback(t *testing.T) {
+	// When no DSL block is present, description from WorkoutMeta should be used.
+	w := plannedio.Workout{
+		Meta: plannedio.WorkoutMeta{
+			Name:        "Bodyweight Strength",
+			Type:        "WeightTraining",
+			MovingTimeS: 1500,
+			Description: "5x\n- Push ups 30s open\n- Squats 30s open\n",
+		},
+	}
+	ev, err := buildEvent("2026-05-11", w)
+	if err != nil {
+		t.Fatalf("buildEvent: %v", err)
+	}
+	if ev.Description != "5x\n- Push ups 30s open\n- Squats 30s open" {
+		t.Errorf("description=%q", ev.Description)
+	}
+}
+
+func TestBuildEventDSLTakesPrecedenceOverDescription(t *testing.T) {
+	// DSL block must take precedence over description field.
+	w := plannedio.Workout{
+		Meta: plannedio.WorkoutMeta{
+			Name:        "Z2 Ride",
+			Type:        "Ride",
+			Description: "should be ignored",
+		},
+		DSL: "- 30m easy",
+	}
+	ev, err := buildEvent("2026-05-11", w)
+	if err != nil {
+		t.Fatalf("buildEvent: %v", err)
+	}
+	if ev.Description == "should be ignored" {
+		t.Error("DSL did not take precedence over description field")
+	}
+	if ev.Description != "- 30m easy" {
+		t.Errorf("description=%q", ev.Description)
+	}
+}
+
+func TestCacheMissRecoveredByDateName(t *testing.T) {
+	tmp := t.TempDir()
+	layout := workspace.New(tmp)
+	if err := layout.EnsureDirs(); err != nil {
+		t.Fatal(err)
+	}
+	// Write a local workout with a stamped ID.
+	localPath := layout.PlannedWorkoutDayPath(date(2026, 5, 11))
+	md := []byte("---\nfit-agent:\n  kind: planned-workout-day\n  date: 2026-05-11\nworkouts:\n  - name: \"Strength\"\n    type: WeightTraining\n    moving_time_s: 900\n    icu_event_id: 999\n---\n\n## Strength\n\nCircuit.\n")
+	if err := os.WriteFile(localPath, md, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Cache has the event under a DIFFERENT id (simulates cache cleared +
+	// event exists on ICU under original id but local stamp differs).
+	writeJSON(t, layout.CacheEventPath("42"), map[string]any{
+		"id":               42,
+		"start_date_local": "2026-05-11T00:00:00",
+		"category":         "WORKOUT",
+		"name":             "Strength",
+		"type":             "WeightTraining",
+		"description":      "",
+		"moving_time":      900,
+	})
+	ctx := Context{
+		Layout:    layout,
+		AthleteID: "0",
+		Location:  time.UTC,
+		Logger:    func(string, ...any) {},
+	}
+	r := daterange.Range{Oldest: "2026-05-11", Newest: "2026-05-11",
+		OldestT: date(2026, 5, 11), NewestT: date(2026, 5, 11)}
+	actions, err := Plan(context.Background(), ctx, r)
+	if err != nil {
+		t.Fatalf("Plan: %v", err)
+	}
+	// Should recover to Unchanged (or Update), never Create.
+	for _, a := range actions {
+		if a.Kind == ActionCreate {
+			t.Errorf("unexpected CREATE action — cache-miss dedup failed: %+v", a)
+		}
+	}
 }

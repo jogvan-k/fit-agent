@@ -374,6 +374,8 @@ var namedIntensities = map[string]bool{
 	"vo2":       true,
 	"anaerobic": true,
 	"sprint":    true,
+	"open":      true, // lap-button terminated; device ignores duration
+	"freeride":  true, // ERG off / no target; device ignores duration
 }
 
 func parseIntensity(tok string, lineNo int) (Intensity, error) {
