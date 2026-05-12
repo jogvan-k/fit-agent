@@ -5,6 +5,13 @@
 //
 // Grammar (v1):
 //
+// The grammar below is the machine-authoritative DSL spec.
+// internal/templates/skills/workout-builder/SKILL.md is the
+// human- and agent-facing spec and must be kept in sync with this
+// grammar. Every intensity type, amount unit, and named keyword
+// added here must also appear with an example in that skill file.
+// See AGENTS.md § "Extending the workout DSL".
+//
 //	workout      := { step }
 //	step         := simple | repeat | ramp
 //	simple       := "- " amount SP intensity [SP "--" SP note]

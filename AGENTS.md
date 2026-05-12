@@ -57,8 +57,8 @@ them. We don't have external consumers in v1.
 - `fit-agent fetch` is the convenience wrapper. Internally it is
   `cache all` followed by `render all`.
 - Atomic subcommands exist for debugging and for the agent:
-  `cache`, `render`, `fit`, `workout`, `sync-workouts` (push then pull),
-  and the legacy push-only `push-workouts`. See §8 of the plan.
+  `cache`, `render`, `fit`, `workout`, and `sync-workouts` (push then pull).
+  See §8 of the plan.
 - Every command that mutates state must support `--dry-run`.
 
 ## Data formats
@@ -190,9 +190,13 @@ push and PR. Match it locally with `make check && make lint`.
   regenerate goldens with `-update`, eyeball the diff,
   update `docs/workspace.md` if user-visible.
 - **Extending the workout DSL.** Update tokenizer + parser in
-  `internal/workoutdsl`, add round-trip and fixture tests, update
-  `internal/templates/skills/workout-builder/SKILL.md`, and bump any
-  examples in `docs/`.
+  `internal/workoutdsl`, add round-trip and fixture tests, then **update
+  `internal/templates/skills/workout-builder/SKILL.md` in the same
+  commit**. The skill is the human- and agent-facing spec for the DSL;
+  `internal/workoutdsl/ast.go` is the machine-authoritative grammar.
+  Keep them in sync: every intensity type, amount unit, and named
+  keyword in `ast.go` must appear with an example in the skill's
+  "Intensities" section. Also bump any examples in `docs/`.
 - **Debugging a single activity.** `fit-agent cache activity <id>`, then
   `fit-agent fit laps .cache/activities/<id>.fit` and
   `fit-agent render activity <id>` to confirm output.

@@ -76,6 +76,8 @@ func stepHasTarget(s Step) bool {
 func intensityHasTarget(i Intensity) bool {
 	return i.Zone != nil || i.Percent != nil || i.Pace != nil
 }
+
+// RenderWorkoutDoc converts a parsed Workout into the workout_doc JSON
 // structure that intervals.icu uses for structured workout syncing to
 // Garmin and other devices.
 //
@@ -135,10 +137,10 @@ func simpleDocStep(s SimpleStep) *WorkoutDocStep {
 		step.Power = &WorkoutDocPower{Units: "power_zone", Value: s.Intensity.Zone.N}
 	case s.Intensity.Percent != nil:
 		step.Power = &WorkoutDocPower{Units: "percent_ftp", Value: *s.Intensity.Percent}
-	// Named intensities (easy, recovery, threshold, etc.) and nil →
-	// no target field; device shows "no target" which is correct for
-	// easy/recovery steps and acceptable for named-zone steps until a
-	// richer mapping is added.
+		// Named intensities (easy, recovery, threshold, etc.) and nil →
+		// no target field; device shows "no target" which is correct for
+		// easy/recovery steps and acceptable for named-zone steps until a
+		// richer mapping is added.
 	}
 	return step
 }
