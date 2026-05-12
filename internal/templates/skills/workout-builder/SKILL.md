@@ -123,13 +123,23 @@ becomes a step note that intervals.icu shows in the workout viewer:
 
 When the athlete asks to shift remaining workouts forward (e.g. "move
 everything by one day"), **only move workouts that have not yet been
-completed**. A today-dated workout may already be done. Always confirm
-with the athlete which workouts to move rather than assuming — there is
-currently no `completed` flag in the markdown files (tracked in
-[fit-agent#10](https://github.com/jogvan-k/fit-agent/issues/10)).
+completed**. A today-dated workout may already be done.
 
-The safest pattern: ask "did you already do today's workout?" before
-including it in a reschedule.
+Check the `fit-agent:` frontmatter block — `sync-workouts` automatically
+stamps `completed: true` there when intervals.icu has matched an activity
+to the planned event:
+
+```yaml
+fit-agent:
+  kind: planned-workout-day
+  date: 2026-05-12
+  completed: true   # ← workout is done; do not reschedule
+```
+
+If `completed: true` is absent, the workout has not been matched yet.
+For a same-day workout where the flag is absent, ask the athlete before
+including it in a reschedule — the activity may have been recorded but
+ICU pairing can lag by a sync cycle.
 
 ## sync-workouts vs push-workouts
 
