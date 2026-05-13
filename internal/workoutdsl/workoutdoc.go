@@ -15,9 +15,14 @@ type WorkoutDocStep struct {
 	Pace *WorkoutDocPace `json:"pace,omitempty"`
 	// Power target (set when the DSL intensity is a Zone or Percent).
 	Power *WorkoutDocPower `json:"power,omitempty"`
+	// HR target (set when the DSL intensity is an HR target).
+	HR *WorkoutDocHR `json:"hr,omitempty"`
+	// Intensity string (e.g. "recovery").
+	Intensity string `json:"intensity,omitempty"`
+	// Text label for the step.
+	Text string `json:"text,omitempty"`
 	// Reps and nested steps for repeat blocks.
 	Reps  int               `json:"reps,omitempty"`
-	Text  string            `json:"text,omitempty"`
 	Steps []*WorkoutDocStep `json:"steps,omitempty"`
 }
 
@@ -25,13 +30,25 @@ type WorkoutDocStep struct {
 // intervals.icu. units="secs_km" means value is seconds-per-km.
 type WorkoutDocPace struct {
 	Units string  `json:"units"`
-	Value float64 `json:"value"`
+	Value float64 `json:"value,omitempty"`
+	Start float64 `json:"start,omitempty"`
+	End   float64 `json:"end,omitempty"`
 }
 
 // WorkoutDocPower is the power/zone target sub-object.
 type WorkoutDocPower struct {
 	Units string `json:"units"`
-	Value int    `json:"value"`
+	Value int    `json:"value,omitempty"`
+	Start int    `json:"start,omitempty"`
+	End   int    `json:"end,omitempty"`
+}
+
+// WorkoutDocHR is the HR target sub-object.
+type WorkoutDocHR struct {
+	Units string `json:"units"`
+	Value int    `json:"value,omitempty"`
+	Start int    `json:"start,omitempty"`
+	End   int    `json:"end,omitempty"`
 }
 
 // WorkoutDoc is the top-level workout_doc JSON object sent to
@@ -74,7 +91,9 @@ func stepHasTarget(s Step) bool {
 }
 
 func intensityHasTarget(i Intensity) bool {
-	return i.Zone != nil || i.Percent != nil || i.Pace != nil
+	return i.Zone != nil || i.Percent != nil || i.Pace != nil ||
+		i.HR != nil || i.PaceZone != nil || i.PacePercent != nil ||
+		i.Watts != nil || i.CustomZone != nil || i.IsRecovery
 }
 
 // RenderWorkoutDoc converts a parsed Workout into the workout_doc JSON
@@ -113,6 +132,10 @@ func buildDocStep(s Step) *WorkoutDocStep {
 
 func simpleDocStep(s SimpleStep) *WorkoutDocStep {
 	step := &WorkoutDocStep{}
+	// Label → text
+	if s.Label != "" {
+		step.Text = s.Label
+	}
 	// Amount.
 	if s.Amount.Duration != nil {
 		step.Duration = s.Amount.Duration.Seconds
@@ -122,32 +145,112 @@ func simpleDocStep(s SimpleStep) *WorkoutDocStep {
 		// We leave it zero here; ICU fills it in after accepting the doc.
 	}
 	// Intensity.
+	applyIntensityToDocStep(step, s.Intensity, s.Amount)
+	return step
+}
+
+func applyIntensityToDocStep(step *WorkoutDocStep, i Intensity, amt Amount) {
 	switch {
-	case s.Intensity.Pace != nil:
-		step.Pace = &WorkoutDocPace{
-			Units: "secs_km",
-			Value: float64(s.Intensity.Pace.Seconds),
+	case i.Pace != nil:
+		p := i.Pace
+		if p.SecondsEnd != 0 {
+			// Range pace: SecondsEnd is the slow end, Seconds is the fast end
+			step.Pace = &WorkoutDocPace{
+				Units: "secs",
+				Start: float64(p.SecondsEnd),
+				End:   float64(p.Seconds),
+			}
+		} else {
+			step.Pace = &WorkoutDocPace{
+				Units: "secs_km",
+				Value: float64(p.Seconds),
+			}
 		}
 		// Also populate Duration as an estimate so ICU can compute
 		// a timeline even before it knows the athlete's pace.
-		if step.Distance > 0 && step.Duration == 0 {
-			step.Duration = step.Distance * s.Intensity.Pace.Seconds / 1000
+		if step.Distance > 0 && step.Duration == 0 && p.Seconds > 0 {
+			step.Duration = step.Distance * p.Seconds / 1000
 		}
-	case s.Intensity.Zone != nil:
-		step.Power = &WorkoutDocPower{Units: "power_zone", Value: s.Intensity.Zone.N}
-	case s.Intensity.Percent != nil:
-		step.Power = &WorkoutDocPower{Units: "percent_ftp", Value: *s.Intensity.Percent}
-		// Named intensities (easy, recovery, threshold, etc.) and nil →
+	case i.PaceZone != nil:
+		pz := i.PaceZone
+		if pz.ZoneTo != 0 {
+			step.Pace = &WorkoutDocPace{
+				Units: "pace_zone",
+				Start: float64(pz.Zone),
+				End:   float64(pz.ZoneTo),
+			}
+		} else {
+			step.Pace = &WorkoutDocPace{
+				Units: "pace_zone",
+				Value: float64(pz.Zone),
+			}
+		}
+	case i.PacePercent != nil:
+		pp := i.PacePercent
+		if pp.PercentTo != 0 {
+			step.Pace = &WorkoutDocPace{
+				Units: "percent",
+				Start: float64(pp.Percent),
+				End:   float64(pp.PercentTo),
+			}
+		} else {
+			step.Pace = &WorkoutDocPace{
+				Units: "percent",
+				Value: float64(pp.Percent),
+			}
+		}
+	case i.Zone != nil:
+		step.Power = &WorkoutDocPower{Units: "power_zone", Value: i.Zone.N}
+	case i.Percent != nil:
+		step.Power = &WorkoutDocPower{Units: "percent_ftp", Value: *i.Percent}
+	case i.Watts != nil:
+		w := i.Watts
+		if w.WattsTo != 0 {
+			step.Power = &WorkoutDocPower{Units: "watts", Start: w.Watts, End: w.WattsTo}
+		} else {
+			step.Power = &WorkoutDocPower{Units: "watts", Value: w.Watts}
+		}
+	case i.CustomZone != nil:
+		cz := i.CustomZone
+		if cz.ZoneTo != 0 {
+			step.Power = &WorkoutDocPower{Units: "custom_zone", Start: cz.Zone, End: cz.ZoneTo}
+		} else {
+			step.Power = &WorkoutDocPower{Units: "custom_zone", Value: cz.Zone}
+		}
+	case i.HR != nil:
+		hr := i.HR
+		if hr.Zone != nil {
+			if hr.ZoneTo != nil {
+				step.HR = &WorkoutDocHR{Units: "zone", Start: hr.Zone.N, End: hr.ZoneTo.N}
+			} else {
+				step.HR = &WorkoutDocHR{Units: "zone", Value: hr.Zone.N}
+			}
+		} else {
+			units := "percent_max"
+			if hr.IsLTHR {
+				units = "percent_lthr"
+			}
+			if hr.PercentTo != 0 {
+				step.HR = &WorkoutDocHR{Units: units, Start: hr.Percent, End: hr.PercentTo}
+			} else {
+				step.HR = &WorkoutDocHR{Units: units, Value: hr.Percent}
+			}
+		}
+	case i.IsRecovery:
+		step.Intensity = "recovery"
+		// Named intensities (easy, threshold, etc.) and nil →
 		// no target field; device shows "no target" which is correct for
 		// easy/recovery steps and acceptable for named-zone steps until a
 		// richer mapping is added.
 	}
-	return step
 }
 
 func repeatDocStep(r RepeatStep) *WorkoutDocStep {
 	step := &WorkoutDocStep{
 		Reps: r.Reps,
+	}
+	if r.Label != "" {
+		step.Text = r.Label
 	}
 	var totalDist, totalDur int
 	for _, sub := range r.Steps {
@@ -172,6 +275,8 @@ func distanceMetres(d *Distance) int {
 	switch d.Unit {
 	case "km":
 		return d.Value * 1000
+	case "km_frac":
+		return d.Value // already metres
 	case "y":
 		// 1 yard ≈ 0.9144 m; round to nearest metre.
 		return int(float64(d.Value) * 0.9144)

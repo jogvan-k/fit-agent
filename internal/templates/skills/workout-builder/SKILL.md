@@ -80,28 +80,50 @@ are comments and ignored.
   ```
   Use this for 3+ step repeats (e.g. work + kick + rest). The inline
   `- Nx (work / rest)` form is limited to exactly two steps.
-- **Ramp** — `- <duration> ramp <fromZone>-<toZone>`
+- **Ramp** — `- <duration> ramp <fromZone>-<toZone>` or `- <duration> ramp <from>%-<to>%` or `- <duration> ramp <from>%-<to>% Pace`
   - `- 20m ramp Z1-Z3`
+  - `- 10m ramp 50%-75%`
+  - `- 10m ramp 60%-80% Pace`
 
 ### Amounts
 
 - **Duration**: composed of `Nh`, `Nm`, `Ns` parts. Examples: `30s`,
   `5m`, `1h`, `1h30m`, `2h15m30s`.
-- **Distance**: `Nkm`, `Ny`, or `Nm` where `N >= 50`. Bare `Nm` with
-  `N < 50` is interpreted as minutes (so `5m` is five minutes, `400m`
-  is four hundred metres). Examples: `400m`, `1km`, `100y`.
+- **Distance**: `Nkm` (or decimal like `3.2km`), `Ny`, `Nmtr`, or `Nm` where `N >= 50`.
+  Bare `Nm` with `N < 50` is interpreted as minutes (so `5m` is five minutes, `400m`
+  is four hundred metres). The `mtr` suffix is also accepted (e.g. `300mtr`).
+  Examples: `400m`, `1km`, `3.2km`, `300mtr`, `100y`.
 
 ### Intensities
 
-- **Pace**: `M:SS/km` or `M:SS/mi` for explicit running pace targets.
-  The `/km` unit suffix is the default and may be omitted (`3:55` = `3:55/km`).
+- **Pace zones**: `Z2 Pace`, `Z1-Z2 Pace` — ICU running pace zone targets.
+  Interval ranges are supported.
+  - `- 11km Z2 Pace`
+  - `- 3.2km Z1-Z2 Pace`
+- **Absolute pace**: `M:SS Pace` or `M:SS-M:SS Pace` — explicit pace or range.
+  The slower pace comes first in a range.
+  - `- Run high 300mtr 4:00 Pace`
+  - `- Run low 300mtr 4:55-4:35 Pace`
+- **Pace (legacy /km form)**: `M:SS/km` or `M:SS/mi` — also accepted.
+  The `/km` suffix is the default and may be omitted (`3:55` = `3:55/km`).
   Examples: `3:55/km`, `4:15/km`, `6:30/mi`.
-  **Always use pace for running interval steps** — named intensities
-  (`threshold`, `tempo`) show as "no target" on the Garmin because the
-  plain-text description is not parsed as a structured target by ICU.
-  fit-agent automatically builds a `workout_doc` with
-  `pace: {units: "secs_km"}` when pace intensity is used, which is what
-  Garmin actually reads.
+  fit-agent builds a `workout_doc` with `pace: {units: "secs_km"}` when
+  pace intensity is used, which is what Garmin actually reads.
+- **Percent of pace**: `78-82% Pace` — percent-of-pace range.
+  - `- 5km 78-82% Pace`
+- **Heart rate zones**: `Z2 HR`, `Z2-Z3 HR` — HR zone or range.
+  - `- 30m Z2 HR`
+  - `- 20m Z2-Z3 HR`
+- **HR percent of max**: `70% HR`, `70-80% HR`.
+  - `- 30m 70-80% HR`
+- **HR percent of LTHR**: `95% LTHR`, `90-95% LTHR`.
+  - `- 10m 95% LTHR`
+- **Watts**: `220w`, `200-240w` — absolute power targets.
+  - `- 5m 220w`
+  - `- 5m 200-240w`
+- **Custom power zones**: `CZ1`, `CZ2-CZ3`.
+  - `- 10m CZ2`
+  - `- 10m CZ2-CZ3`
 - **Zones**: `Z1` … `Z6`.
 - **Named**: `recovery`, `easy`, `tempo`, `threshold`, `vo2`,
   `anaerobic`, `sprint`, `open`, `freeride`. The CLI passes these
@@ -109,7 +131,34 @@ are comments and ignored.
   - `open` — lap-button terminated. The dummy duration is used only
     for ICU's graph; the Garmin ignores it and waits for lap press.
   - `freeride` — no target / ERG off; also advances on lap press.
+- **Structured recovery**: `intensity=recovery` — sets the step intensity
+  to "recovery" in the workout_doc (distinct from the named `recovery`).
+  - `- 90s intensity=recovery`
 - **Percent of FTP / threshold pace**: `55%`, `120%` (range 0–200).
+
+### Labels and Cadence
+
+- **Step labels**: Optional free-text prefix before the amount. Displayed
+  as the step name on Garmin and ICU. Must come before the duration/distance.
+  - `- Run high 300mtr 4:00 Pace`
+  - `- Easy jog 5m recovery`
+- **Repeat labels**: Optional prefix on a block repeat `Nx` header.
+  - `Main Set 5x`
+  - `Warm-up 3x`
+- **Cadence**: Optional `Nrpm` or `N-Mrpm` suffix after intensity.
+  - `- 10m 75% 90rpm`
+  - `- 10m Z2 85-95rpm`
+
+### Ramps
+
+- **Zone ramp**: `- <duration> ramp Z1-Z3`
+- **Percent ramp**: `- <duration> ramp 50%-75%`
+- **Pace-percent ramp**: `- <duration> ramp 60%-80% Pace`
+
+Examples:
+- `- 20m ramp Z1-Z3`
+- `- 10m ramp 50%-75%`
+- `- 10m ramp 60%-80% Pace`
 
 ### Notes
 

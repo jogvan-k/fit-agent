@@ -28,13 +28,13 @@ func Parse(src string) (*Workout, error) {
 		lineNo := i + 1
 		line := strings.TrimRight(raw, " \t\r")
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		if isSkippableLine(trimmed) {
 			continue
 		}
-		// Block-style repeat header: a line that is just "Nx" (optionally
-		// with a trailing "-- note"), with no parenthesised body.
-		if reps, note, ok := tryBlockRepeatHeader(trimmed); ok {
-			step, consumed, err := parseBlockRepeat(lines, i, reps, note, lineNo)
+		// Block-style repeat header: a line ending with "Nx" (optionally with label prefix
+		// and/or trailing "-- note"), with no parenthesised body.
+		if reps, label, note, ok := tryBlockRepeatHeader(trimmed); ok {
+			step, consumed, err := parseBlockRepeat(lines, i, reps, label, note, lineNo)
 			if err != nil {
 				return nil, err
 			}
@@ -70,30 +70,59 @@ func Parse(src string) (*Workout, error) {
 	return w, nil
 }
 
-// tryBlockRepeatHeader recognises a bare "Nx" line (optionally followed
-// by "-- note"). Returns (reps, note, true) on match; otherwise (0,"",false).
-func tryBlockRepeatHeader(trimmed string) (int, string, bool) {
+// isSkippableLine returns true for blank lines and markdown formatting lines.
+func isSkippableLine(trimmed string) bool {
+	if trimmed == "" {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "#") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "---") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "**") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "|") {
+		return true
+	}
+	return false
+}
+
+// tryBlockRepeatHeader recognises a "Nx" line (with optional label prefix and "-- note").
+// Returns (reps, label, note, true) on match; otherwise (0,"","",false).
+func tryBlockRepeatHeader(trimmed string) (int, string, string, bool) {
 	body, note := splitNote(trimmed)
 	body = strings.TrimSpace(body)
 	if !strings.HasSuffix(body, "x") && !strings.HasSuffix(body, "X") {
-		return 0, "", false
+		return 0, "", "", false
 	}
-	num := body[:len(body)-1]
-	if num == "" {
-		return 0, "", false
+	// Find the last space before "x" to support "Label Nx"
+	xIdx := len(body) - 1
+	// Find where the number starts (scan backward from 'x')
+	numEnd := xIdx
+	numStart := numEnd
+	for numStart > 0 && body[numStart-1] >= '0' && body[numStart-1] <= '9' {
+		numStart--
 	}
-	n, err := strconv.Atoi(num)
+	if numStart == numEnd {
+		return 0, "", "", false
+	}
+	numStr := body[numStart:numEnd]
+	n, err := strconv.Atoi(numStr)
 	if err != nil || n < 1 {
-		return 0, "", false
+		return 0, "", "", false
 	}
-	return n, note, true
+	label := strings.TrimSpace(body[:numStart])
+	return n, label, note, true
 }
 
 // parseBlockRepeat consumes the header line at lines[start] plus the
 // following contiguous "- step" lines (terminated by a blank line, EOF,
 // or any non-step line). Returns the assembled Step and the number of
 // source lines consumed (header + body lines).
-func parseBlockRepeat(lines []string, start, reps int, note string, headerLineNo int) (*Step, int, error) {
+func parseBlockRepeat(lines []string, start, reps int, label, note string, headerLineNo int) (*Step, int, error) {
 	steps := []SimpleStep{}
 	consumed := 1
 	for j := start + 1; j < len(lines); j++ {
@@ -130,7 +159,7 @@ func parseBlockRepeat(lines []string, start, reps int, note string, headerLineNo
 	}
 	return &Step{
 		Line:   headerLineNo,
-		Repeat: &RepeatStep{Reps: reps, Steps: steps, Note: note},
+		Repeat: &RepeatStep{Label: label, Reps: reps, Steps: steps, Note: note},
 		Note:   note,
 	}, consumed, nil
 }
@@ -183,32 +212,66 @@ func parseStepBody(body string, lineNo int) (*Step, error) {
 		}
 		return &Step{Repeat: rep}, nil
 	}
+	// ramp: "<duration> ramp <zone>-<zone>" or "<duration> ramp <pct>%-<pct>%" or "<duration> ramp <pct>%-<pct>% Pace"
+	if ramp, ok, err := tryParseRamp(body, lineNo); ok {
+		if err != nil {
+			return nil, err
+		}
+		return &Step{Ramp: ramp}, nil
+	}
+	// simple step (possibly with label, multi-token intensity)
+	simple, err := parseSimple(body, lineNo)
+	if err != nil {
+		return nil, err
+	}
+	return &Step{Simple: simple}, nil
+}
+
+// tryParseRamp attempts to parse ramp step bodies.
+func tryParseRamp(body string, lineNo int) (*RampStep, bool, error) {
 	fields := strings.Fields(body)
-	// ramp: "<duration> ramp <zone>-<zone>"
-	if len(fields) == 3 && strings.EqualFold(fields[1], "ramp") {
-		dur, err := parseDuration(fields[0], lineNo)
-		if err != nil {
-			return nil, err
-		}
-		from, to, err := parseZoneRange(fields[2], lineNo)
-		if err != nil {
-			return nil, err
-		}
-		return &Step{Ramp: &RampStep{Duration: dur, From: from, To: to}}, nil
+	// Minimum: "<dur> ramp <range>"
+	if len(fields) < 3 {
+		return nil, false, nil
 	}
-	// simple: "<amount> <intensity>"
-	if len(fields) != 2 {
-		return nil, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("expected '<amount> <intensity>', got %q", body)}
+	if !strings.EqualFold(fields[1], "ramp") {
+		return nil, false, nil
 	}
-	amt, err := parseAmount(fields[0], lineNo)
+	dur, err := parseDuration(fields[0], lineNo)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
-	intensity, err := parseIntensity(fields[1], lineNo)
-	if err != nil {
-		return nil, err
+	// Remaining tokens after "ramp" form the range
+	rangePart := strings.Join(fields[2:], " ")
+	// Try "Zx-Zy" zone range
+	if strings.HasPrefix(rangePart, "Z") || strings.HasPrefix(rangePart, "z") {
+		from, to, err := parseZoneRange(rangePart, lineNo)
+		if err != nil {
+			return nil, true, err
+		}
+		return &RampStep{Duration: dur, From: from, To: to, RampType: "zone"}, true, nil
 	}
-	return &Step{Simple: &SimpleStep{Amount: amt, Intensity: intensity}}, nil
+	// Try "N%-M% Pace" or "N%-M%"
+	isPace := strings.HasSuffix(strings.ToLower(rangePart), " pace")
+	pctPart := rangePart
+	if isPace {
+		pctPart = strings.TrimSpace(rangePart[:len(rangePart)-5])
+	}
+	if strings.Contains(pctPart, "-") && strings.HasSuffix(pctPart, "%") {
+		dashIdx := strings.LastIndex(pctPart, "-")
+		fromStr := strings.TrimSuffix(pctPart[:dashIdx], "%")
+		toStr := strings.TrimSuffix(pctPart[dashIdx+1:], "%")
+		from, err1 := strconv.Atoi(fromStr)
+		to, err2 := strconv.Atoi(toStr)
+		if err1 == nil && err2 == nil {
+			rampType := "percent"
+			if isPace {
+				rampType = "pace_percent"
+			}
+			return &RampStep{Duration: dur, FromPercent: from, ToPercent: to, RampType: rampType}, true, nil
+		}
+	}
+	return nil, true, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid ramp range %q", rangePart)}
 }
 
 // tryParseRepeat looks for "Nx (work / rest)" and returns (repeat, err,
@@ -256,58 +319,169 @@ func tryParseRepeat(body string, lineNo int) (*RepeatStep, error, bool) {
 	return &RepeatStep{Reps: reps, Steps: []SimpleStep{*work, *restStep}}, nil, true
 }
 
+// parseSimple parses a step body that is a SimpleStep.
+// Body may contain a label prefix, an amount, a multi-token intensity, and an optional cadence.
 func parseSimple(body string, lineNo int) (*SimpleStep, error) {
-	fields := strings.Fields(body)
-	if len(fields) != 2 {
-		return nil, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("expected '<amount> <intensity>', got %q", body)}
+	tokens := strings.Fields(body)
+	if len(tokens) == 0 {
+		return nil, &ParseError{Line: lineNo, Col: 1, Msg: "empty step"}
 	}
-	amt, err := parseAmount(fields[0], lineNo)
+
+	// Find the index of the first amount token (duration or distance).
+	amtIdx := -1
+	for i, tok := range tokens {
+		if looksLikeAmount(tok) {
+			amtIdx = i
+			break
+		}
+	}
+	if amtIdx < 0 {
+		return nil, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("no amount (duration/distance) found in %q", body)}
+	}
+
+	// Everything before amtIdx is the label.
+	label := strings.Join(tokens[:amtIdx], " ")
+
+	// Parse the amount.
+	amt, err := parseAmount(tokens[amtIdx], lineNo)
 	if err != nil {
 		return nil, err
 	}
-	intensity, err := parseIntensity(fields[1], lineNo)
+
+	// Remaining tokens after amount form intensity (and optional cadence).
+	rest := tokens[amtIdx+1:]
+	if len(rest) == 0 {
+		return nil, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("missing intensity in %q", body)}
+	}
+
+	// Check for trailing cadence "Nrpm" or "N-Mrpm".
+	var cadence *CadenceRange
+	if len(rest) > 0 && looksLikeCadence(rest[len(rest)-1]) {
+		cadence, err = parseCadence(rest[len(rest)-1], lineNo)
+		if err != nil {
+			return nil, err
+		}
+		rest = rest[:len(rest)-1]
+	}
+
+	// Parse multi-token intensity.
+	intensity, err := parseIntensityTokens(rest, lineNo)
 	if err != nil {
 		return nil, err
 	}
-	return &SimpleStep{Amount: amt, Intensity: intensity}, nil
+
+	return &SimpleStep{Label: label, Amount: amt, Intensity: intensity, Cadence: cadence}, nil
+}
+
+// looksLikeAmount returns true if tok could be a duration or distance amount token.
+func looksLikeAmount(tok string) bool {
+	if tok == "" {
+		return false
+	}
+	lower := strings.ToLower(tok)
+	// Known distance suffixes
+	for _, sfx := range []string{"km", "mtr", "mi", "y"} {
+		if strings.HasSuffix(lower, sfx) {
+			prefix := tok[:len(tok)-len(sfx)]
+			if prefix == "" {
+				continue
+			}
+			// Accept integer or float prefix
+			if _, err := strconv.Atoi(prefix); err == nil {
+				return true
+			}
+			if _, err := strconv.ParseFloat(prefix, 64); err == nil {
+				return true
+			}
+		}
+	}
+	// Check for duration characters: h, m, s
+	if strings.ContainsAny(lower, "hms") {
+		// Must start with a digit
+		if len(tok) > 0 && tok[0] >= '0' && tok[0] <= '9' {
+			return true
+		}
+	}
+	// Bare "Nm" where N >= 50 is metres distance
+	if strings.HasSuffix(lower, "m") && !strings.ContainsAny(lower[:len(lower)-1], "hms") {
+		numStr := tok[:len(tok)-1]
+		if n, err := strconv.Atoi(numStr); err == nil && n >= 50 {
+			return true
+		}
+	}
+	return false
+}
+
+// looksLikeCadence returns true if tok looks like "Nrpm" or "N-Mrpm".
+func looksLikeCadence(tok string) bool {
+	return strings.HasSuffix(strings.ToLower(tok), "rpm")
+}
+
+// parseCadence parses "90rpm" or "90-100rpm".
+func parseCadence(tok string, lineNo int) (*CadenceRange, error) {
+	s := strings.ToLower(tok)
+	s = strings.TrimSuffix(s, "rpm")
+	if strings.Contains(s, "-") {
+		parts := strings.SplitN(s, "-", 2)
+		a, err1 := strconv.Atoi(parts[0])
+		b, err2 := strconv.Atoi(parts[1])
+		if err1 != nil || err2 != nil {
+			return nil, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid cadence %q", tok)}
+		}
+		return &CadenceRange{RPM: a, RPMTo: b}, nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return nil, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid cadence %q", tok)}
+	}
+	return &CadenceRange{RPM: n}, nil
 }
 
 func parseAmount(tok string, lineNo int) (Amount, error) {
 	if tok == "" {
 		return Amount{}, &ParseError{Line: lineNo, Col: 1, Msg: "empty amount"}
 	}
-	// Distance suffixes first (longest match).
-	switch {
-	case strings.HasSuffix(tok, "km"):
-		n, err := strconv.Atoi(strings.TrimSuffix(tok, "km"))
+	lower := strings.ToLower(tok)
+	// "mtr" suffix = metres
+	if strings.HasSuffix(lower, "mtr") {
+		numStr := tok[:len(tok)-3]
+		n, err := strconv.Atoi(numStr)
 		if err != nil {
 			return Amount{}, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid distance %q: %v", tok, err)}
 		}
-		return Amount{Distance: &Distance{Value: n, Unit: "km", Raw: tok}}, nil
-	case strings.HasSuffix(tok, "y"):
-		n, err := strconv.Atoi(strings.TrimSuffix(tok, "y"))
+		return Amount{Distance: &Distance{Value: n, Unit: "m", Raw: fmt.Sprintf("%dm", n)}}, nil
+	}
+	// "km" suffix — support decimal like 3.2km
+	if strings.HasSuffix(lower, "km") {
+		numStr := tok[:len(tok)-2]
+		if n, err := strconv.Atoi(numStr); err == nil {
+			return Amount{Distance: &Distance{Value: n, Unit: "km", Raw: tok}}, nil
+		}
+		// Decimal km: store as metres with unit "km_frac" to preserve Raw rendering
+		if f, err := strconv.ParseFloat(numStr, 64); err == nil && f > 0 {
+			return Amount{Distance: &Distance{Value: int(f * 1000), Unit: "km_frac", Raw: tok}}, nil
+		}
+		return Amount{}, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid distance %q", tok)}
+	}
+	// "mi" distance suffix (not to be confused with "mi" pace unit)
+	// We only treat "Nmi" as distance if it doesn't contain colons (pace would have colons).
+	if strings.HasSuffix(lower, "mi") && !strings.Contains(tok, ":") {
+		n, err := strconv.Atoi(tok[:len(tok)-2])
+		if err == nil && n > 0 {
+			return Amount{Distance: &Distance{Value: n, Unit: "mi", Raw: tok}}, nil
+		}
+	}
+	// "y" suffix
+	if strings.HasSuffix(lower, "y") {
+		n, err := strconv.Atoi(tok[:len(tok)-1])
 		if err != nil {
 			return Amount{}, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid distance %q: %v", tok, err)}
 		}
 		return Amount{Distance: &Distance{Value: n, Unit: "y", Raw: tok}}, nil
 	}
-	// Could be either "400m" (distance) or a duration "5m"/"30s"/"1h30m".
-	// Heuristic: a single "Nm" with N >= 50 is distance (50m..; durations
-	// max practically 90m). To avoid heuristics, we make distance explicit
-	// only via "km"/"y", and treat a bare "Nm" as MINUTES. Distance in
-	// metres must be written "400m" — but that conflicts. Resolution:
-	// only "km" and "y" are distance units inside a single token; metres
-	// distances also use "m" but distinguished by trailing "m" being the
-	// only character AND the number being >= 50 (typical track repeat).
-	// To keep this deterministic and avoid surprises, we adopt:
-	//   - "Nm" where N <= 6 and there's no "h"/"s" -> minutes
-	//   - "Nm" where N > 6 -> minutes too
-	// Distances in metres are not supported in the bare "m" form; users
-	// should write "400m" — which the spec supports — so we use a
-	// stricter rule: if tok ends with "m" and has no h/s/digit-suffix
-	// quirks AND value >= 50, treat as distance. Otherwise duration.
-	if strings.HasSuffix(tok, "m") && !strings.ContainsAny(tok, "hs") {
-		numStr := strings.TrimSuffix(tok, "m")
+	// "m" suffix — distance if N >= 50, else duration minutes
+	if strings.HasSuffix(lower, "m") && !strings.ContainsAny(lower, "hs") {
+		numStr := tok[:len(tok)-1]
 		if n, err := strconv.Atoi(numStr); err == nil {
 			if n >= 50 {
 				return Amount{Distance: &Distance{Value: n, Unit: "m", Raw: tok}}, nil
@@ -378,10 +552,264 @@ var namedIntensities = map[string]bool{
 	"freeride":  true, // ERG off / no target; device ignores duration
 }
 
+// parseIntensityTokens parses one or more tokens as an intensity.
+// This handles multi-token intensities like "Z2 HR", "Z2 Pace", "70% HR", "4:55-4:35 Pace", etc.
+func parseIntensityTokens(tokens []string, lineNo int) (Intensity, error) {
+	if len(tokens) == 0 {
+		return Intensity{}, &ParseError{Line: lineNo, Col: 1, Msg: "empty intensity"}
+	}
+
+	// Join all tokens for pattern matching
+	joined := strings.Join(tokens, " ")
+
+	// "intensity=recovery"
+	if strings.ToLower(joined) == "intensity=recovery" {
+		return Intensity{IsRecovery: true}, nil
+	}
+
+	// Two-token intensities: "Z2 HR", "Z2-Z3 HR", "70% HR", "70-80% HR", "95% LTHR",
+	// "Z2 Pace", "Z1-Z2 Pace", "78-82% Pace"
+	if len(tokens) == 2 {
+		qualifier := strings.ToUpper(tokens[1])
+
+		switch qualifier {
+		case "HR", "LTHR":
+			isLTHR := qualifier == "LTHR"
+			hr, err := parseHRTarget(tokens[0], isLTHR, lineNo)
+			if err != nil {
+				return Intensity{}, err
+			}
+			return Intensity{HR: hr}, nil
+
+		case "PACE":
+			// Could be "Z2 Pace", "Z1-Z2 Pace", "78-82% Pace", or "4:00 Pace", "4:55-4:35 Pace"
+			tok0 := tokens[0]
+			// Zone-based pace: "Z2 Pace" or "Z1-Z2 Pace"
+			if tok0[0] == 'Z' || tok0[0] == 'z' {
+				pz, err := parsePaceZone(tok0, lineNo)
+				if err != nil {
+					return Intensity{}, err
+				}
+				return Intensity{PaceZone: pz}, nil
+			}
+			// Percent pace: "78-82% Pace" or "78% Pace"
+			if strings.HasSuffix(tok0, "%") {
+				pp, err := parsePacePercent(tok0, lineNo)
+				if err != nil {
+					return Intensity{}, err
+				}
+				return Intensity{PacePercent: pp}, nil
+			}
+			// Absolute pace with "Pace" keyword: "4:00 Pace" or "4:55-4:35 Pace"
+			p, err := parseAbsolutePaceToken(tok0, lineNo, true)
+			if err != nil {
+				return Intensity{}, err
+			}
+			return Intensity{Pace: p}, nil
+		}
+	}
+
+	// Single-token intensities
+	if len(tokens) == 1 {
+		return parseIntensity(tokens[0], lineNo)
+	}
+
+	return Intensity{}, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("unknown intensity %q", joined)}
+}
+
+// parseHRTarget parses the first token of a "TOKEN HR/LTHR" intensity.
+func parseHRTarget(tok string, isLTHR bool, lineNo int) (*HRTarget, error) {
+	// Zone range: "Z2-Z3"
+	if (tok[0] == 'Z' || tok[0] == 'z') && strings.Contains(tok, "-") {
+		parts := strings.SplitN(tok, "-", 2)
+		z1, err := parseZone(parts[0], lineNo)
+		if err != nil {
+			return nil, err
+		}
+		z2, err := parseZone(parts[1], lineNo)
+		if err != nil {
+			return nil, err
+		}
+		return &HRTarget{Zone: &z1, ZoneTo: &z2, IsLTHR: isLTHR}, nil
+	}
+	// Single zone: "Z2"
+	if tok[0] == 'Z' || tok[0] == 'z' {
+		z, err := parseZone(tok, lineNo)
+		if err != nil {
+			return nil, err
+		}
+		return &HRTarget{Zone: &z, IsLTHR: isLTHR}, nil
+	}
+	// Percent range: "70-80%"
+	if strings.HasSuffix(tok, "%") && strings.Contains(tok, "-") {
+		inner := strings.TrimSuffix(tok, "%")
+		dashIdx := strings.Index(inner, "-")
+		a, err1 := strconv.Atoi(inner[:dashIdx])
+		b, err2 := strconv.Atoi(inner[dashIdx+1:])
+		if err1 != nil || err2 != nil {
+			return nil, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid HR percent range %q", tok)}
+		}
+		return &HRTarget{Percent: a, PercentTo: b, IsLTHR: isLTHR}, nil
+	}
+	// Single percent: "70%"
+	if strings.HasSuffix(tok, "%") {
+		n, err := strconv.Atoi(strings.TrimSuffix(tok, "%"))
+		if err != nil {
+			return nil, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid HR percent %q", tok)}
+		}
+		return &HRTarget{Percent: n, IsLTHR: isLTHR}, nil
+	}
+	return nil, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid HR target %q", tok)}
+}
+
+// parsePaceZone parses "Z2" or "Z1-Z2" as a PaceZoneTarget.
+func parsePaceZone(tok string, lineNo int) (*PaceZoneTarget, error) {
+	upper := strings.ToUpper(tok)
+	if strings.Contains(upper, "-") {
+		parts := strings.SplitN(upper, "-", 2)
+		z1, err := parseZone(parts[0], lineNo)
+		if err != nil {
+			return nil, err
+		}
+		z2, err := parseZone(parts[1], lineNo)
+		if err != nil {
+			return nil, err
+		}
+		return &PaceZoneTarget{Zone: z1.N, ZoneTo: z2.N}, nil
+	}
+	z, err := parseZone(upper, lineNo)
+	if err != nil {
+		return nil, err
+	}
+	return &PaceZoneTarget{Zone: z.N}, nil
+}
+
+// parsePacePercent parses "78-82%" or "78%" as a PacePercentTarget.
+func parsePacePercent(tok string, lineNo int) (*PacePercentTarget, error) {
+	inner := strings.TrimSuffix(tok, "%")
+	if strings.Contains(inner, "-") {
+		parts := strings.SplitN(inner, "-", 2)
+		a, err1 := strconv.Atoi(parts[0])
+		b, err2 := strconv.Atoi(parts[1])
+		if err1 != nil || err2 != nil {
+			return nil, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid pace percent range %q", tok)}
+		}
+		return &PacePercentTarget{Percent: a, PercentTo: b}, nil
+	}
+	n, err := strconv.Atoi(inner)
+	if err != nil {
+		return nil, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid pace percent %q", tok)}
+	}
+	return &PacePercentTarget{Percent: n}, nil
+}
+
+// parseAbsolutePaceToken parses "4:00" or "4:55-4:35" as a Pace target.
+// isPaceWord indicates the "Pace" keyword was present (vs /km or /mi).
+func parseAbsolutePaceToken(tok string, lineNo int, isPaceWord bool) (*Pace, error) {
+	// Range: "4:55-4:35"
+	if strings.Count(tok, ":") == 2 {
+		// Format M:SS-M:SS
+		dashIdx := strings.LastIndex(tok, "-")
+		if dashIdx > 0 {
+			p1 := tok[:dashIdx]
+			p2 := tok[dashIdx+1:]
+			secs1, ok1 := parsePaceMMSS(p1)
+			secs2, ok2 := parsePaceMMSS(p2)
+			if ok1 && ok2 {
+				// p1 is the slow end, p2 is the fast end
+				raw := fmt.Sprintf("%s-%s Pace", p1, p2)
+				return &Pace{Seconds: secs2, SecondsEnd: secs1, Unit: "km", Raw: raw, IsPaceWord: true}, nil
+			}
+		}
+	}
+	// Single pace
+	secs, ok := parsePaceMMSS(tok)
+	if !ok {
+		return nil, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid pace %q", tok)}
+	}
+	var raw string
+	if isPaceWord {
+		min := secs / 60
+		sec := secs % 60
+		raw = fmt.Sprintf("%d:%02d Pace", min, sec)
+	} else {
+		raw = tok + "/km"
+	}
+	return &Pace{Seconds: secs, Unit: "km", Raw: raw, IsPaceWord: isPaceWord}, nil
+}
+
+// parsePaceMMSS parses "M:SS" or "MM:SS" and returns total seconds.
+func parsePaceMMSS(s string) (int, bool) {
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) != 2 {
+		return 0, false
+	}
+	min, err1 := strconv.Atoi(parts[0])
+	sec, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return 0, false
+	}
+	if min < 0 || sec < 0 || sec >= 60 {
+		return 0, false
+	}
+	total := min*60 + sec
+	if total <= 0 {
+		return 0, false
+	}
+	return total, true
+}
+
 func parseIntensity(tok string, lineNo int) (Intensity, error) {
 	if tok == "" {
 		return Intensity{}, &ParseError{Line: lineNo, Col: 1, Msg: "empty intensity"}
 	}
+	// "intensity=recovery"
+	if strings.ToLower(tok) == "intensity=recovery" {
+		return Intensity{IsRecovery: true}, nil
+	}
+	// Watts: "220w" or "200-240w"
+	if strings.HasSuffix(strings.ToLower(tok), "w") && !strings.ContainsAny(tok, ":/%") {
+		inner := tok[:len(tok)-1]
+		if strings.Contains(inner, "-") {
+			parts := strings.SplitN(inner, "-", 2)
+			a, err1 := strconv.Atoi(parts[0])
+			b, err2 := strconv.Atoi(parts[1])
+			if err1 == nil && err2 == nil {
+				return Intensity{Watts: &WattsTarget{Watts: a, WattsTo: b}}, nil
+			}
+		} else {
+			n, err := strconv.Atoi(inner)
+			if err == nil {
+				return Intensity{Watts: &WattsTarget{Watts: n}}, nil
+			}
+		}
+	}
+	// Custom zone: "CZ1" or "CZ2-CZ3"
+	if strings.HasPrefix(strings.ToUpper(tok), "CZ") {
+		upper := strings.ToUpper(tok)
+		inner := upper[2:]
+		if strings.Contains(inner, "-CZ") {
+			parts := strings.SplitN(inner, "-CZ", 2)
+			a, err1 := strconv.Atoi(parts[0])
+			b, err2 := strconv.Atoi(parts[1])
+			if err1 == nil && err2 == nil {
+				return Intensity{CustomZone: &CustomZoneTarget{Zone: a, ZoneTo: b}}, nil
+			}
+		} else if strings.Contains(inner, "-") {
+			parts := strings.SplitN(inner, "-", 2)
+			a, err1 := strconv.Atoi(parts[0])
+			b, err2 := strconv.Atoi(parts[1])
+			if err1 == nil && err2 == nil {
+				return Intensity{CustomZone: &CustomZoneTarget{Zone: a, ZoneTo: b}}, nil
+			}
+		} else {
+			n, err := strconv.Atoi(inner)
+			if err == nil {
+				return Intensity{CustomZone: &CustomZoneTarget{Zone: n}}, nil
+			}
+		}
+	}
+	// FTP percent
 	if strings.HasSuffix(tok, "%") {
 		n, err := strconv.Atoi(strings.TrimSuffix(tok, "%"))
 		if err != nil {
@@ -392,6 +820,7 @@ func parseIntensity(tok string, lineNo int) (Intensity, error) {
 		}
 		return Intensity{Percent: &n}, nil
 	}
+	// Zone
 	if (tok[0] == 'Z' || tok[0] == 'z') && len(tok) == 2 {
 		n, err := strconv.Atoi(tok[1:])
 		if err != nil || n < 1 || n > 6 {
@@ -399,9 +828,11 @@ func parseIntensity(tok string, lineNo int) (Intensity, error) {
 		}
 		return Intensity{Zone: &Zone{N: n}}, nil
 	}
+	// Absolute pace with /km or /mi suffix, or bare M:SS
 	if p, ok := tryParsePace(tok); ok {
 		return Intensity{Pace: p}, nil
 	}
+	// Named intensity
 	low := strings.ToLower(tok)
 	if namedIntensities[low] {
 		return Intensity{Named: low}, nil
@@ -461,10 +892,11 @@ func parseZoneRange(tok string, lineNo int) (Zone, Zone, error) {
 }
 
 func parseZone(tok string, lineNo int) (Zone, error) {
-	if len(tok) != 2 || (tok[0] != 'Z' && tok[0] != 'z') {
+	upper := strings.ToUpper(tok)
+	if len(upper) != 2 || upper[0] != 'Z' {
 		return Zone{}, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid zone %q (expected Zx)", tok)}
 	}
-	n, err := strconv.Atoi(tok[1:])
+	n, err := strconv.Atoi(upper[1:])
 	if err != nil || n < 1 || n > 6 {
 		return Zone{}, &ParseError{Line: lineNo, Col: 1, Msg: fmt.Sprintf("invalid zone %q (expected Z1..Z6)", tok)}
 	}

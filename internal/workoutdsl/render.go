@@ -16,7 +16,11 @@ func RenderDSL(w *Workout) string {
 		// Multi-step (>2) repeats use the block form.
 		if s.Repeat != nil && len(s.Repeat.Steps) > 2 {
 			r := s.Repeat
-			fmt.Fprintf(&b, "%dx", r.Reps)
+			if r.Label != "" {
+				fmt.Fprintf(&b, "%s %dx", r.Label, r.Reps)
+			} else {
+				fmt.Fprintf(&b, "%dx", r.Reps)
+			}
 			if s.Note != "" {
 				b.WriteString(" -- ")
 				b.WriteString(s.Note)
@@ -67,14 +71,38 @@ func renderStepBody(s Step) string {
 		}
 		return fmt.Sprintf("%dx", r.Reps)
 	case s.Ramp != nil:
-		return fmt.Sprintf("%s ramp %s-%s", s.Ramp.Duration.Raw, s.Ramp.From, s.Ramp.To)
+		return renderRampDSL(*s.Ramp)
 	default:
 		return ""
 	}
 }
 
+func renderRampDSL(r RampStep) string {
+	switch r.RampType {
+	case "percent":
+		return fmt.Sprintf("%s ramp %d%%-%d%%", r.Duration.Raw, r.FromPercent, r.ToPercent)
+	case "pace_percent":
+		return fmt.Sprintf("%s ramp %d%%-%d%% Pace", r.Duration.Raw, r.FromPercent, r.ToPercent)
+	default: // "zone" or legacy
+		return fmt.Sprintf("%s ramp %s-%s", r.Duration.Raw, r.From, r.To)
+	}
+}
+
 func renderSimple(s SimpleStep) string {
-	return fmt.Sprintf("%s %s", s.Amount, s.Intensity)
+	parts := []string{}
+	if s.Label != "" {
+		parts = append(parts, s.Label)
+	}
+	parts = append(parts, s.Amount.String())
+	parts = append(parts, s.Intensity.String())
+	if s.Cadence != nil {
+		if s.Cadence.RPMTo != 0 {
+			parts = append(parts, fmt.Sprintf("%d-%drpm", s.Cadence.RPM, s.Cadence.RPMTo))
+		} else {
+			parts = append(parts, fmt.Sprintf("%drpm", s.Cadence.RPM))
+		}
+	}
+	return strings.Join(parts, " ")
 }
 
 // RenderICU emits the intervals.icu workout-description string for the
@@ -104,7 +132,11 @@ func RenderICU(w *Workout) string {
 			writeICUSimple(&b, *s.Simple, s.Note)
 		case s.Repeat != nil:
 			r := s.Repeat
-			fmt.Fprintf(&b, "%dx\n", r.Reps)
+			if r.Label != "" {
+				fmt.Fprintf(&b, "%s %dx\n", r.Label, r.Reps)
+			} else {
+				fmt.Fprintf(&b, "%dx\n", r.Reps)
+			}
 			for i, sub := range r.Steps {
 				if i > 0 {
 					b.WriteString("\n")
@@ -116,11 +148,7 @@ func RenderICU(w *Workout) string {
 				b.WriteString(s.Note)
 			}
 		case s.Ramp != nil:
-			fmt.Fprintf(&b, "- %s ramp %s-%s", s.Ramp.Duration.Raw, s.Ramp.From, s.Ramp.To)
-			if s.Note != "" {
-				b.WriteString(" ")
-				b.WriteString(s.Note)
-			}
+			writeICURamp(&b, *s.Ramp, s.Note)
 		}
 		b.WriteString("\n")
 		prevWasRepeat = isRepeat
@@ -129,11 +157,58 @@ func RenderICU(w *Workout) string {
 }
 
 func writeICUSimple(b *strings.Builder, s SimpleStep, note string) {
-	fmt.Fprintf(b, "- %s %s", icuAmount(s.Amount), s.Intensity)
+	b.WriteString("- ")
+	if s.Label != "" {
+		b.WriteString(s.Label)
+		b.WriteString(" ")
+	}
+	b.WriteString(icuAmount(s.Amount))
+	b.WriteString(" ")
+	b.WriteString(icuIntensity(s.Intensity))
+	if s.Cadence != nil {
+		if s.Cadence.RPMTo != 0 {
+			fmt.Fprintf(b, " %d-%drpm", s.Cadence.RPM, s.Cadence.RPMTo)
+		} else {
+			fmt.Fprintf(b, " %drpm", s.Cadence.RPM)
+		}
+	}
 	if note != "" {
 		b.WriteString(" ")
 		b.WriteString(note)
 	}
+}
+
+func writeICURamp(b *strings.Builder, r RampStep, note string) {
+	b.WriteString("- ")
+	b.WriteString(r.Duration.Raw)
+	b.WriteString(" ramp ")
+	switch r.RampType {
+	case "percent":
+		fmt.Fprintf(b, "%d%%-%d%%", r.FromPercent, r.ToPercent)
+	case "pace_percent":
+		fmt.Fprintf(b, "%d%%-%d%% Pace", r.FromPercent, r.ToPercent)
+	default: // "zone"
+		fmt.Fprintf(b, "%s-%s", r.From, r.To)
+	}
+	if note != "" {
+		b.WriteString(" ")
+		b.WriteString(note)
+	}
+}
+
+// icuIntensity renders an Intensity for the intervals.icu description string.
+// For legacy /km pace targets, strips the /km suffix to use plain "M:SS" or
+// adds the "Pace" keyword for IsPaceWord targets.
+func icuIntensity(i Intensity) string {
+	if i.Pace != nil {
+		p := i.Pace
+		if p.IsPaceWord {
+			return p.Raw // already has "Pace" suffix
+		}
+		// Legacy /km or /mi — keep as-is
+		return p.Raw
+	}
+	return i.String()
 }
 
 // icuAmount renders an Amount for the intervals.icu description string.
