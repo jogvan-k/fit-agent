@@ -585,7 +585,7 @@ func parseIntensityTokens(tokens []string, lineNo int) (Intensity, error) {
 			// Could be "Z2 Pace", "Z1-Z2 Pace", "78-82% Pace", or "4:00 Pace", "4:55-4:35 Pace"
 			tok0 := tokens[0]
 			// Zone-based pace: "Z2 Pace" or "Z1-Z2 Pace"
-			if (tok0[0] == 'Z' || tok0[0] == 'z') {
+			if tok0[0] == 'Z' || tok0[0] == 'z' {
 				pz, err := parsePaceZone(tok0, lineNo)
 				if err != nil {
 					return Intensity{}, err

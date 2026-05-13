@@ -57,7 +57,7 @@ type Step struct {
 
 // SimpleStep is a single chunk of work, e.g. "10m Z2".
 type SimpleStep struct {
-	Label     string        // optional text-to-athlete prefix e.g. "Run high"
+	Label     string // optional text-to-athlete prefix e.g. "Run high"
 	Amount    Amount
 	Intensity Intensity
 	Cadence   *CadenceRange // optional cadence target e.g. 90rpm
@@ -106,16 +106,16 @@ type Distance struct {
 
 // Intensity is a target intensity. Exactly one of the fields is set.
 type Intensity struct {
-	Zone         *Zone
-	Named        string         // recovery|easy|tempo|threshold|vo2|anaerobic|sprint
-	Percent      *int           // FTP percent
-	Pace         *Pace          // run pace target e.g. 3:55/km or 3:55 Pace
-	HR           *HRTarget      // Z2 HR, 70% HR, 95% LTHR, 70-80% HR, Z2-Z3 HR
-	PaceZone     *PaceZoneTarget    // Z2 Pace, Z1-Z2 Pace
-	PacePercent  *PacePercentTarget // 78-82% Pace
-	Watts        *WattsTarget       // 220w, 200-240w
-	CustomZone   *CustomZoneTarget  // CZ1, CZ2-CZ3
-	IsRecovery   bool               // intensity=recovery
+	Zone        *Zone
+	Named       string             // recovery|easy|tempo|threshold|vo2|anaerobic|sprint
+	Percent     *int               // FTP percent
+	Pace        *Pace              // run pace target e.g. 3:55/km or 3:55 Pace
+	HR          *HRTarget          // Z2 HR, 70% HR, 95% LTHR, 70-80% HR, Z2-Z3 HR
+	PaceZone    *PaceZoneTarget    // Z2 Pace, Z1-Z2 Pace
+	PacePercent *PacePercentTarget // 78-82% Pace
+	Watts       *WattsTarget       // 220w, 200-240w
+	CustomZone  *CustomZoneTarget  // CZ1, CZ2-CZ3
+	IsRecovery  bool               // intensity=recovery
 }
 
 // HRTarget is a heart-rate target, e.g. Z2 HR, 70% HR, 95% LTHR, 70-80% HR.
