@@ -115,7 +115,7 @@ func TestParseErrors(t *testing.T) {
 		{"no dash", "10m Z2", `must start with "- "`},
 		{"empty step", "- ", "empty"},
 		{"bad zone", "- 5m Z9", "invalid zone"},
-		{"bad duration", "- 5x Z2", `unexpected 'x'`}, // "x" isn't a duration unit
+		{"bad duration", "- 5x Z2", `no amount`}, // "x" isn't a duration unit
 		{"unclosed repeat", "- 5x (4m Z5 / 3m Z2", "missing closing"},
 		{"bad repeat split", "- 5x (4m Z5)", "work / rest"},
 		{"unknown intensity", "- 5m foo", "unknown intensity"},
@@ -626,5 +626,142 @@ func TestSummaryBlockRepeat(t *testing.T) {
 	s := Summary(w)
 	if s.TotalSeconds != 4*(60+30+120) {
 		t.Errorf("TotalSeconds=%d want %d", s.TotalSeconds, 4*(60+30+120))
+	}
+}
+
+// TestRenderICUFullSyntax tests round-trip parse→renderICU for the full ICU syntax.
+func TestRenderICUFullSyntax(t *testing.T) {
+	cases := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "easy run km Z2 Pace",
+			src:  "- 11km Z2 Pace\n",
+			want: "- 11km Z2 Pace\n",
+		},
+		{
+			name: "pace zone range",
+			src:  "- 3.2km Z1-Z2 Pace\n",
+			want: "- 3.2km Z1-Z2 Pace\n",
+		},
+		{
+			name: "label with absolute pace",
+			src:  "- Run high 300mtr 4:00 Pace\n",
+			want: "- Run high 300mtr 4:00 Pace\n",
+		},
+		{
+			name: "label with absolute pace range",
+			src:  "- Run low 300mtr 4:55-4:35 Pace\n",
+			want: "- Run low 300mtr 4:55-4:35 Pace\n",
+		},
+		{
+			name: "intensity=recovery",
+			src:  "- 90s intensity=recovery\n",
+			want: "- 90s intensity=recovery\n",
+		},
+		{
+			name: "Z2 HR",
+			src:  "- 10m Z2 HR\n",
+			want: "- 10m Z2 HR\n",
+		},
+		{
+			name: "HR percent range",
+			src:  "- 30m 70-80% HR\n",
+			want: "- 30m 70-80% HR\n",
+		},
+		{
+			name: "LTHR percent",
+			src:  "- 10m 95% LTHR\n",
+			want: "- 10m 95% LTHR\n",
+		},
+		{
+			name: "watts",
+			src:  "- 5m 220w\n",
+			want: "- 5m 220w\n",
+		},
+		{
+			name: "watts range",
+			src:  "- 5m 200-240w\n",
+			want: "- 5m 200-240w\n",
+		},
+		{
+			name: "custom zone",
+			src:  "- 10m CZ2\n",
+			want: "- 10m CZ2\n",
+		},
+		{
+			name: "cadence",
+			src:  "- 10m 75% 90rpm\n",
+			want: "- 10m 75% 90rpm\n",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w, err := Parse(tc.src)
+			if err != nil {
+				t.Fatalf("Parse(%q): %v", tc.src, err)
+			}
+			got := RenderICU(w)
+			if got != tc.want {
+				t.Errorf("RenderICU mismatch:\n got: %q\nwant: %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRepeatWithLabel tests that block repeats with labels parse and render correctly.
+func TestRepeatWithLabel(t *testing.T) {
+	src := "Main Set 4x\n- 1km 3:55/km\n- 200m recovery\n"
+	w, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(w.Steps) != 1 || w.Steps[0].Repeat == nil {
+		t.Fatalf("expected one repeat, got %+v", w.Steps)
+	}
+	r := w.Steps[0].Repeat
+	if r.Label != "Main Set" {
+		t.Errorf("label=%q want %q", r.Label, "Main Set")
+	}
+	if r.Reps != 4 {
+		t.Errorf("reps=%d want 4", r.Reps)
+	}
+	// ICU render should emit "Main Set 4x"
+	icu := RenderICU(w)
+	if !strings.Contains(icu, "Main Set 4x") {
+		t.Errorf("ICU output missing label:\n%q", icu)
+	}
+}
+
+// TestPaceZoneKmAmount tests that km distances with pace zone work.
+func TestPaceZoneKmAmount(t *testing.T) {
+	src := "- 11km Z2 Pace\n"
+	w, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	step := w.Steps[0].Simple
+	if step == nil {
+		t.Fatalf("expected simple step")
+	}
+	if step.Intensity.PaceZone == nil {
+		t.Fatalf("expected PaceZone intensity, got %+v", step.Intensity)
+	}
+	if step.Intensity.PaceZone.Zone != 2 {
+		t.Errorf("zone=%d want 2", step.Intensity.PaceZone.Zone)
+	}
+}
+
+// TestMarkdownSkip tests that markdown formatting lines are silently skipped.
+func TestMarkdownSkip(t *testing.T) {
+	src := "---\n**Main workout**\n| col1 | col2 |\n- 10m Z2\n"
+	w, err := Parse(src)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(w.Steps) != 1 {
+		t.Errorf("steps=%d want 1", len(w.Steps))
 	}
 }
