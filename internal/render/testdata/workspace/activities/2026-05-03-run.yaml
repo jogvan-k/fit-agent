@@ -14,6 +14,7 @@ duration_s: 3643
 moving_time_s: 3441
 distance_m: 10156.9
 elevation_gain_m: 42.0
+elevation_loss_m: 68.0
 tss: 62.5
 rpe: 6
 avg_hr: 145
@@ -32,6 +33,7 @@ laps:
     avg_cadence: 79
     avg_speed_mps: 2.951
     avg_pace_sec_per_km: 339
+    elevation_gain_m: 31.0
   - i: 2
     type: recovery
     start_local: 2026-05-03T09:41:11+02:00

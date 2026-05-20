@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 )
@@ -42,6 +44,51 @@ type Profile struct {
 	// IcuAPIKey is only set when the OS keyring is unavailable.
 	// It MUST NOT be set if a keyring entry exists for this profile.
 	IcuAPIKey string `toml:"icu_api_key,omitempty"`
+	// AutoSplitDistance controls implicit splitting of long unsegmented
+	// active laps in the generated activity YAML. Accepts values like
+	// "1km" (default), "500m", "2km", or "none"/"null"/"" to disable.
+	// When unset the default of 1 km is applied.
+	AutoSplitDistance string `toml:"auto_split_distance,omitempty"`
+}
+
+// AutoSplitDistanceM parses the profile's AutoSplitDistance string and
+// returns the threshold in metres and whether the feature is enabled.
+// An empty / unset value returns (1000, true) — the 1 km default.
+func (p Profile) AutoSplitDistanceM() (metres int, enabled bool) {
+	if strings.TrimSpace(strings.ToLower(p.AutoSplitDistance)) == "" {
+		return 1000, true // default
+	}
+	m, ok, err := ParseAutoSplitDistance(p.AutoSplitDistance)
+	if err != nil {
+		return 1000, true
+	}
+	return m, ok
+}
+
+// ParseAutoSplitDistance parses a human-friendly distance string into
+// metres. Accepted formats: "1km", "500m", "2.5km", "" / "none" /
+// "null" (disabled). Returns (0, false, nil) when disabled.
+func ParseAutoSplitDistance(s string) (metres int, enabled bool, err error) {
+	s = strings.TrimSpace(strings.ToLower(s))
+	switch s {
+	case "", "none", "null":
+		return 0, false, nil
+	}
+	if strings.HasSuffix(s, "km") {
+		v, e := strconv.ParseFloat(strings.TrimSuffix(s, "km"), 64)
+		if e != nil || v <= 0 {
+			return 0, false, fmt.Errorf("invalid auto_split_distance %q", s)
+		}
+		return int(v*1000 + 0.5), true, nil
+	}
+	if strings.HasSuffix(s, "m") {
+		v, e := strconv.ParseFloat(strings.TrimSuffix(s, "m"), 64)
+		if e != nil || v <= 0 {
+			return 0, false, fmt.Errorf("invalid auto_split_distance %q", s)
+		}
+		return int(v + 0.5), true, nil
+	}
+	return 0, false, fmt.Errorf("invalid auto_split_distance %q: use \"1km\", \"500m\", or \"none\"", s)
 }
 
 // Config is the on-disk schema for the fit-agent configuration file.

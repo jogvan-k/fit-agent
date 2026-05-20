@@ -164,10 +164,15 @@ func newRenderAllCmd() *cobra.Command {
 }
 
 func renderCtx(cmd *cobra.Command, r *runtime.Resolved, dryRun bool) renderorch.Context {
+	autoSplitM, enabled := r.Profile.AutoSplitDistanceM()
+	if !enabled {
+		autoSplitM = -1 // sentinel: user explicitly disabled
+	}
 	return renderorch.Context{
-		Layout:   r.Layout,
-		Location: r.Location,
-		DryRun:   dryRun,
-		Logger:   makeLogger(cmd),
+		Layout:             r.Layout,
+		Location:           r.Location,
+		DryRun:             dryRun,
+		Logger:             makeLogger(cmd),
+		AutoSplitDistanceM: autoSplitM,
 	}
 }

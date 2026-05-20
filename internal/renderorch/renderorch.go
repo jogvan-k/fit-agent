@@ -43,6 +43,10 @@ type Context struct {
 	// DryRun reports outcomes without writing.
 	DryRun bool
 	Logger func(format string, args ...any)
+	// AutoSplitDistanceM is passed through to the render layer. 0 disables
+	// implicit splitting; positive value (metres) enables it. When unset
+	// the default 1 km (1000 m) is applied by the render layer.
+	AutoSplitDistanceM int
 }
 
 func (c Context) now() time.Time {
@@ -390,11 +394,18 @@ func All(ctx context.Context, c Context, r daterange.Range) (Stats, error) {
 // renderActivityDay assembles a render.ActivityDay from the cached
 // per-activity inputs and emits the YAML.
 func renderActivityDay(c Context, date time.Time, inputs []render.ActivityInput) ([]byte, error) {
+	autoSplit := c.AutoSplitDistanceM
+	if autoSplit == 0 {
+		autoSplit = 1000 // default: 1 km
+	} else if autoSplit < 0 {
+		autoSplit = 0 // explicitly disabled
+	}
 	return render.ActivityDayYAML(render.ActivityDay{
-		Date:        date,
-		GeneratedAt: c.now(),
-		Location:    c.Location,
-		Activities:  inputs,
+		Date:               date,
+		GeneratedAt:        c.now(),
+		Location:           c.Location,
+		Activities:         inputs,
+		AutoSplitDistanceM: autoSplit,
 	})
 }
 

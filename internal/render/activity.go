@@ -43,6 +43,11 @@ type ActivityDay struct {
 	// Activities are the per-activity inputs. Each pairs an
 	// intervals.icu summary with the parsed FIT (when available).
 	Activities []ActivityInput
+	// AutoSplitDistanceM is the threshold in metres for implicit lap
+	// splitting. Active laps longer than this value are divided into
+	// consecutive segments of this distance (plus a remainder tail).
+	// 0 disables the feature.
+	AutoSplitDistanceM int
 }
 
 // ActivityInput pairs the icu summary with the parsed FIT.
@@ -79,7 +84,7 @@ func ActivityDayYAML(day ActivityDay) ([]byte, error) {
 
 	for _, a := range acts {
 		b.WriteString("---\n")
-		writeActivityDoc(&b, a, loc)
+		writeActivityDoc(&b, a, loc, day.AutoSplitDistanceM)
 	}
 	return b.Bytes(), nil
 }
@@ -94,7 +99,7 @@ func writeActivityHeader(b *bytes.Buffer, day ActivityDay, loc *time.Location) {
 	b.WriteString("source: intervals.icu\n")
 }
 
-func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location) {
+func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location, autoSplitM int) {
 	s := a.Summary
 	fmt.Fprintf(b, "icu_id: %s\n", yamlString(s.ID))
 	fmt.Fprintf(b, "name: %s\n", yamlString(s.Name))
@@ -113,6 +118,10 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location) {
 	}
 	if s.TotalElevationGain > 0 {
 		fmt.Fprintf(b, "elevation_gain_m: %s\n", formatFloat(s.TotalElevationGain, 1))
+	}
+	// Elevation loss comes from FIT session data when available.
+	if a.FIT != nil && a.FIT.ElevationLoss > 0 {
+		fmt.Fprintf(b, "elevation_loss_m: %s\n", formatFloat(a.FIT.ElevationLoss, 1))
 	}
 	if s.IcuTrainingLoad > 0 {
 		fmt.Fprintf(b, "tss: %s\n", formatFloat(s.IcuTrainingLoad, 1))
@@ -147,7 +156,7 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location) {
 	if len(a.FIT.Laps) > 0 {
 		b.WriteString("laps:\n")
 		for _, l := range a.FIT.Laps {
-			writeLap(b, l, loc)
+			writeLap(b, l, loc, autoSplitM, a.FIT.Records)
 		}
 	}
 	if len(a.FIT.Intervals) > 0 {
@@ -158,7 +167,7 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location) {
 	}
 }
 
-func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location) {
+func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM int, records []fitparse.Record) {
 	fmt.Fprintf(b, "  - i: %d\n", l.Index)
 	if l.Intensity != "" {
 		fmt.Fprintf(b, "    type: %s\n", yamlString(l.Intensity))
@@ -199,8 +208,47 @@ func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location) {
 	if l.AvgPaceSecPerKm > 0 {
 		fmt.Fprintf(b, "    avg_pace_sec_per_km: %d\n", l.AvgPaceSecPerKm)
 	}
+	if l.ElevationGain > 0 {
+		fmt.Fprintf(b, "    elevation_gain_m: %s\n", formatFloat(l.ElevationGain, 1))
+	}
+	if l.ElevationLoss > 0 {
+		fmt.Fprintf(b, "    elevation_loss_m: %s\n", formatFloat(l.ElevationLoss, 1))
+	}
 	if l.Calories > 0 {
 		fmt.Fprintf(b, "    calories: %d\n", l.Calories)
+	}
+	// Auto-splits: divide long unsegmented active laps into equal segments.
+	if autoSplitM > 0 && l.Distance > float64(autoSplitM) {
+		segs := autoSplitLap(l, autoSplitM, records)
+		if len(segs) > 1 {
+			b.WriteString("    auto_splits:\n")
+			for _, s := range segs {
+				fmt.Fprintf(b, "      - segment: %d\n", s.segment)
+				fmt.Fprintf(b, "        source: auto_split\n")
+				fmt.Fprintf(b, "        distance_m: %s\n", formatFloat(s.distanceM, 1))
+				if s.durationS > 0 {
+					fmt.Fprintf(b, "        duration_s: %d\n", s.durationS)
+				}
+				if s.avgPaceSecPerKm > 0 {
+					fmt.Fprintf(b, "        avg_pace_sec_per_km: %d\n", s.avgPaceSecPerKm)
+				}
+				if s.avgHR > 0 {
+					fmt.Fprintf(b, "        avg_hr: %d\n", s.avgHR)
+				}
+				if s.maxHR > 0 {
+					fmt.Fprintf(b, "        max_hr: %d\n", s.maxHR)
+				}
+				if s.avgCadence > 0 {
+					fmt.Fprintf(b, "        avg_cadence: %d\n", s.avgCadence)
+				}
+				if s.elevationGainM > 0 {
+					fmt.Fprintf(b, "        elevation_gain_m: %s\n", formatFloat(s.elevationGainM, 1))
+				}
+				if s.elevationLossM > 0 {
+					fmt.Fprintf(b, "        elevation_loss_m: %s\n", formatFloat(s.elevationLossM, 1))
+				}
+			}
+		}
 	}
 }
 
@@ -216,4 +264,259 @@ func writeInterval(b *bytes.Buffer, iv fitparse.Interval) {
 		}
 		fmt.Fprintf(b, "    laps: [%s]\n", strings.Join(ints, ", "))
 	}
+}
+
+// autoSplitSegment holds the derived stats for one implicit split segment.
+type autoSplitSegment struct {
+	segment         int
+	distanceM       float64
+	durationS       int
+	avgPaceSecPerKm int
+	avgHR           int
+	maxHR           int
+	avgCadence      int
+	elevationGainM  float64
+	elevationLossM  float64
+}
+
+// autoSplitLap divides a single lap into segments of splitM metres using the
+// per-second FIT record stream. Each segment gets real averages computed from
+// the records whose cumulative distance falls within the segment's range.
+// When records are absent or insufficient, falls back to proportional
+// approximation from the lap summary.
+// Only laps with intensity "active" are split; all others return nil.
+func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record) []autoSplitSegment {
+	if l.Intensity != "active" {
+		return nil
+	}
+	if l.Distance <= 0 || splitM <= 0 {
+		return nil
+	}
+	n := int(l.Distance / float64(splitM))
+	remainder := l.Distance - float64(n)*float64(splitM)
+	total := n
+	if remainder > 0.5 {
+		total++
+	}
+	if total < 2 {
+		return nil
+	}
+
+	// Find the lap's distance offset: the cumulative distance at the start of
+	// this lap. We locate it by finding the first record at or after the lap's
+	// start time.
+	var lapStartDist float64
+	lapStartDistSet := false
+	if len(records) > 0 && !l.StartLocal.IsZero() {
+		for _, r := range records {
+			if !r.Timestamp.Before(l.StartLocal) {
+				lapStartDist = r.Distance
+				lapStartDistSet = true
+				break
+			}
+		}
+	}
+
+	// Filter to records belonging to this lap by distance range.
+	lapEndDist := lapStartDist + l.Distance
+	var lapRecs []fitparse.Record
+	if lapStartDistSet && len(records) > 0 {
+		for _, r := range records {
+			if r.Distance >= lapStartDist && r.Distance <= lapEndDist {
+				lapRecs = append(lapRecs, r)
+			}
+		}
+	}
+
+	segs := make([]autoSplitSegment, total)
+	for i := 0; i < total; i++ {
+		segStart := lapStartDist + float64(i*splitM)
+		segEnd := segStart + float64(splitM)
+		if i == n {
+			segEnd = lapEndDist
+		}
+		dist := segEnd - segStart
+
+		var seg autoSplitSegment
+		seg.segment = i + 1
+		seg.distanceM = dist
+
+		if len(lapRecs) > 0 {
+			seg = segStatsFromRecords(lapRecs, i+1, segStart, segEnd, dist)
+		} else {
+			// Fallback: proportional from lap summary
+			frac := dist / l.Distance
+			durS := int(l.Duration.Seconds()*frac + 0.5)
+			pace := 0
+			if dist > 0 && durS > 0 {
+				pace = int(float64(durS)/(dist/1000.0) + 0.5)
+			}
+			seg = autoSplitSegment{
+				segment:         i + 1,
+				distanceM:       dist,
+				durationS:       durS,
+				avgPaceSecPerKm: pace,
+				avgHR:           l.AvgHR,
+				maxHR:           l.MaxHR,
+				avgCadence:      l.AvgCadence,
+			}
+		}
+		segs[i] = seg
+	}
+
+	// Elevation: run EWMA smoothing over the entire lap's altitude stream,
+	// then apply hysteresis on the smoothed values per segment.
+	// See docs/elevation-algorithm.md for rationale.
+	if len(lapRecs) > 0 {
+		applyElevation(segs, lapRecs, lapStartDist, float64(splitM), lapEndDist, n)
+	}
+
+	return segs
+}
+
+// elevThresholds returns the hysteresis threshold in metres based on whether
+// the altitude data is barometric (more precise) or GPS-only (noisier).
+func elevThreshold(barometric bool) float64 {
+	if barometric {
+		return 2.0 // metres; matches Strava's barometric threshold
+	}
+	return 8.0 // metres; conservative for GPS-only altitude
+}
+
+// applyElevation computes per-segment elevation gain/loss using a two-step
+// algorithm: EWMA smoothing over the full lap, then per-segment hysteresis.
+// It writes directly into segs[].elevationGainM and segs[].elevationLossM.
+func applyElevation(segs []autoSplitSegment, lapRecs []fitparse.Record, lapStartDist, splitM, lapEndDist float64, n int) {
+	const ewmaAlpha = 0.1 // smoothing factor; lower = more smoothing
+
+	// Detect source type from first record with valid altitude.
+	barometric := false
+	for _, r := range lapRecs {
+		if r.AltitudeValid {
+			barometric = r.AltitudeIsBarometric
+			break
+		}
+	}
+	thresh := elevThreshold(barometric)
+
+	// Pass 1: EWMA smooth across the entire lap altitude stream.
+	// We keep a parallel slice of (distance, smoothedAlt) for bucketing.
+	type altPoint struct {
+		dist float64
+		alt  float64
+	}
+	var smoothed []altPoint
+	var ewma float64
+	ewmaInit := false
+	for _, r := range lapRecs {
+		if !r.AltitudeValid {
+			continue
+		}
+		if !ewmaInit {
+			ewma = r.Altitude
+			ewmaInit = true
+		} else {
+			ewma = ewmaAlpha*r.Altitude + (1-ewmaAlpha)*ewma
+		}
+		smoothed = append(smoothed, altPoint{dist: r.Distance, alt: ewma})
+	}
+	if len(smoothed) < 2 {
+		return
+	}
+
+	// Pass 2: for each segment, apply hysteresis on its slice of smoothed values.
+	for i := range segs {
+		segStart := lapStartDist + float64(i)*splitM
+		segEnd := segStart + splitM
+		if i == n {
+			segEnd = lapEndDist
+		}
+
+		var gain, loss float64
+		var committed float64
+		committedSet := false
+		for _, p := range smoothed {
+			if p.dist < segStart || p.dist > segEnd {
+				continue
+			}
+			if !committedSet {
+				committed = p.alt
+				committedSet = true
+				continue
+			}
+			delta := p.alt - committed
+			if delta >= thresh {
+				gain += delta
+				committed = p.alt
+			} else if delta <= -thresh {
+				loss -= delta
+				committed = p.alt
+			}
+		}
+		segs[i].elevationGainM = gain
+		segs[i].elevationLossM = loss
+	}
+}
+
+// segStatsFromRecords computes per-segment averages from the subset of records
+// whose distance falls within [segStart, segEnd).
+// Elevation is handled by the caller (autoSplitLap) using the lap's own
+// Garmin-filtered TotalAscent/TotalDescent values distributed proportionally.
+func segStatsFromRecords(recs []fitparse.Record, segment int, segStart, segEnd, dist float64) autoSplitSegment {
+	var hrSum, hrCount, maxHR, cadSum, cadCount int
+	var speedSum float64
+	speedCount := 0
+	var firstTime, lastTime time.Time
+
+	for _, r := range recs {
+		if r.Distance < segStart || r.Distance > segEnd {
+			continue
+		}
+		if r.HR > 0 {
+			hrSum += r.HR
+			hrCount++
+			if r.HR > maxHR {
+				maxHR = r.HR
+			}
+		}
+		if r.Cadence > 0 {
+			cadSum += r.Cadence
+			cadCount++
+		}
+		if r.Speed > 0 {
+			speedSum += r.Speed
+			speedCount++
+		}
+		if firstTime.IsZero() {
+			firstTime = r.Timestamp
+		}
+		lastTime = r.Timestamp
+	}
+
+	seg := autoSplitSegment{
+		segment:   segment,
+		distanceM: dist,
+	}
+	if !firstTime.IsZero() && !lastTime.IsZero() {
+		seg.durationS = int(lastTime.Sub(firstTime).Seconds() + 0.5)
+		if seg.durationS < 1 {
+			seg.durationS = 1
+		}
+	}
+	if seg.durationS > 0 && dist > 0 {
+		seg.avgPaceSecPerKm = int(float64(seg.durationS)/(dist/1000.0) + 0.5)
+	} else if speedCount > 0 {
+		avgSpeed := speedSum / float64(speedCount)
+		if avgSpeed > 0 {
+			seg.avgPaceSecPerKm = int(1000.0/avgSpeed + 0.5)
+		}
+	}
+	if hrCount > 0 {
+		seg.avgHR = hrSum / hrCount
+		seg.maxHR = maxHR
+	}
+	if cadCount > 0 {
+		seg.avgCadence = cadSum / cadCount
+	}
+	return seg
 }
