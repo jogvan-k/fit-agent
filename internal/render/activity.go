@@ -156,7 +156,7 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location, auto
 	if len(a.FIT.Laps) > 0 {
 		b.WriteString("laps:\n")
 		for _, l := range a.FIT.Laps {
-			writeLap(b, l, loc, autoSplitM, a.FIT.Records, a.FIT.ElevationGain, a.FIT.ElevationLoss)
+			writeLap(b, l, loc, autoSplitM, a.FIT.Records)
 		}
 	}
 	if len(a.FIT.Intervals) > 0 {
@@ -167,7 +167,7 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location, auto
 	}
 }
 
-func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM int, records []fitparse.Record, sessionGain, sessionLoss float64) {
+func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM int, records []fitparse.Record) {
 	fmt.Fprintf(b, "  - i: %d\n", l.Index)
 	if l.Intensity != "" {
 		fmt.Fprintf(b, "    type: %s\n", yamlString(l.Intensity))
@@ -219,7 +219,7 @@ func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM in
 	}
 	// Auto-splits: divide long unsegmented active laps into equal segments.
 	if autoSplitM > 0 && l.Distance > float64(autoSplitM) {
-		segs := autoSplitLap(l, autoSplitM, records, sessionGain, sessionLoss)
+		segs := autoSplitLap(l, autoSplitM, records)
 		if len(segs) > 1 {
 			b.WriteString("    auto_splits:\n")
 			for _, s := range segs {
@@ -285,7 +285,7 @@ type autoSplitSegment struct {
 // When records are absent or insufficient, falls back to proportional
 // approximation from the lap summary.
 // Only laps with intensity "active" are split; all others return nil.
-func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record, sessionGain, sessionLoss float64) []autoSplitSegment {
+func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record) []autoSplitSegment {
 	if l.Intensity != "active" {
 		return nil
 	}
@@ -364,16 +364,11 @@ func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record, session
 		segs[i] = seg
 	}
 
-	// Use lap elevation totals; fall back to session totals when lap values
-	// are absent (some Garmin firmware omits TotalDescent from lap messages).
+	// Use lap elevation totals only — these match what Garmin displays.
+	// Session-level totals use a different (DEM/barometric-corrected)
+	// methodology and must not be used as a substitute for missing lap values.
 	lapGain := l.ElevationGain
 	lapLoss := l.ElevationLoss
-	if lapGain == 0 && sessionGain > 0 {
-		lapGain = sessionGain
-	}
-	if lapLoss == 0 && sessionLoss > 0 {
-		lapLoss = sessionLoss
-	}
 
 	// Elevation: use per-record altitude shape to distribute gain/loss across
 	// segments, then scale so the segment totals match the lap's own
