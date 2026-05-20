@@ -371,8 +371,9 @@ func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record) []autoS
 // whose distance falls within [segStart, segEnd).
 // Elevation uses a hysteresis filter to suppress GPS noise: altitude changes
 // are only committed once they exceed minElevDelta metres from the last
-// committed value, matching Garmin's approach.
-const minElevDelta = 5.0 // metres
+// committed value. 1m gives per-metre resolution; totals will be slightly
+// higher than the device-reported lap values which use more aggressive filtering.
+const minElevDelta = 1.0 // metres
 
 func segStatsFromRecords(recs []fitparse.Record, segment int, segStart, segEnd, dist float64) autoSplitSegment {
 	var hrSum, hrCount, maxHR, cadSum, cadCount int
