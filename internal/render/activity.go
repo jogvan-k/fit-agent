@@ -43,6 +43,11 @@ type ActivityDay struct {
 	// Activities are the per-activity inputs. Each pairs an
 	// intervals.icu summary with the parsed FIT (when available).
 	Activities []ActivityInput
+	// AutoSplitDistanceM is the threshold in metres for implicit lap
+	// splitting. Active laps longer than this value are divided into
+	// consecutive segments of this distance (plus a remainder tail).
+	// 0 disables the feature.
+	AutoSplitDistanceM int
 }
 
 // ActivityInput pairs the icu summary with the parsed FIT.
@@ -79,7 +84,7 @@ func ActivityDayYAML(day ActivityDay) ([]byte, error) {
 
 	for _, a := range acts {
 		b.WriteString("---\n")
-		writeActivityDoc(&b, a, loc)
+		writeActivityDoc(&b, a, loc, day.AutoSplitDistanceM)
 	}
 	return b.Bytes(), nil
 }
@@ -94,7 +99,7 @@ func writeActivityHeader(b *bytes.Buffer, day ActivityDay, loc *time.Location) {
 	b.WriteString("source: intervals.icu\n")
 }
 
-func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location) {
+func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location, autoSplitM int) {
 	s := a.Summary
 	fmt.Fprintf(b, "icu_id: %s\n", yamlString(s.ID))
 	fmt.Fprintf(b, "name: %s\n", yamlString(s.Name))
@@ -147,7 +152,7 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location) {
 	if len(a.FIT.Laps) > 0 {
 		b.WriteString("laps:\n")
 		for _, l := range a.FIT.Laps {
-			writeLap(b, l, loc)
+			writeLap(b, l, loc, autoSplitM)
 		}
 	}
 	if len(a.FIT.Intervals) > 0 {
@@ -158,7 +163,7 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location) {
 	}
 }
 
-func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location) {
+func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM int) {
 	fmt.Fprintf(b, "  - i: %d\n", l.Index)
 	if l.Intensity != "" {
 		fmt.Fprintf(b, "    type: %s\n", yamlString(l.Intensity))
@@ -202,6 +207,33 @@ func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location) {
 	if l.Calories > 0 {
 		fmt.Fprintf(b, "    calories: %d\n", l.Calories)
 	}
+	// Auto-splits: divide long unsegmented active laps into equal segments.
+	if autoSplitM > 0 && l.Distance > float64(autoSplitM) {
+		segs := autoSplitLap(l, autoSplitM)
+		if len(segs) > 1 {
+			b.WriteString("    auto_splits:\n")
+			for _, s := range segs {
+				fmt.Fprintf(b, "      - segment: %d\n", s.segment)
+				fmt.Fprintf(b, "        source: auto_split\n")
+				fmt.Fprintf(b, "        distance_m: %s\n", formatFloat(s.distanceM, 1))
+				if s.durationS > 0 {
+					fmt.Fprintf(b, "        duration_s: %d\n", s.durationS)
+				}
+				if s.avgPaceSecPerKm > 0 {
+					fmt.Fprintf(b, "        avg_pace_sec_per_km: %d\n", s.avgPaceSecPerKm)
+				}
+				if s.avgHR > 0 {
+					fmt.Fprintf(b, "        avg_hr: %d\n", s.avgHR)
+				}
+				if s.maxHR > 0 {
+					fmt.Fprintf(b, "        max_hr: %d\n", s.maxHR)
+				}
+				if s.avgCadence > 0 {
+					fmt.Fprintf(b, "        avg_cadence: %d\n", s.avgCadence)
+				}
+			}
+		}
+	}
 }
 
 func writeInterval(b *bytes.Buffer, iv fitparse.Interval) {
@@ -216,4 +248,66 @@ func writeInterval(b *bytes.Buffer, iv fitparse.Interval) {
 		}
 		fmt.Fprintf(b, "    laps: [%s]\n", strings.Join(ints, ", "))
 	}
+}
+
+// autoSplitSegment holds the derived stats for one implicit split segment.
+type autoSplitSegment struct {
+	segment         int
+	distanceM       float64
+	durationS       int
+	avgPaceSecPerKm int
+	avgHR           int
+	maxHR           int
+	avgCadence      int
+}
+
+// autoSplitLap divides a single lap proportionally into segments of
+// splitM metres (plus a remainder tail). Because the FIT decoder only
+// stores lap-level summaries (not per-record streams), all segments
+// inherit the lap's average HR, cadence, and pace — which is accurate
+// for steady efforts and a reasonable approximation for varied pacing.
+// The last segment covers the remainder distance.
+// Only laps with intensity "active" are split; all others return nil.
+func autoSplitLap(l fitparse.Lap, splitM int) []autoSplitSegment {
+	if l.Intensity != "active" {
+		return nil
+	}
+	if l.Distance <= 0 || splitM <= 0 {
+		return nil
+	}
+	n := int(l.Distance / float64(splitM))
+	remainder := l.Distance - float64(n)*float64(splitM)
+	total := n
+	if remainder > 0.5 { // ignore sub-half-metre rounding dust
+		total++
+	}
+	if total < 2 {
+		return nil
+	}
+
+	segs := make([]autoSplitSegment, total)
+	totalDurS := int(l.Duration.Seconds() + 0.5)
+
+	for i := 0; i < total; i++ {
+		dist := float64(splitM)
+		if i == n { // last remainder segment
+			dist = remainder
+		}
+		frac := dist / l.Distance
+		durS := int(float64(totalDurS)*frac + 0.5)
+		pace := 0
+		if dist > 0 && durS > 0 {
+			pace = int(float64(durS)/(dist/1000.0) + 0.5)
+		}
+		segs[i] = autoSplitSegment{
+			segment:         i + 1,
+			distanceM:       dist,
+			durationS:       durS,
+			avgPaceSecPerKm: pace,
+			avgHR:           l.AvgHR,
+			maxHR:           l.MaxHR,
+			avgCadence:      l.AvgCadence,
+		}
+	}
+	return segs
 }
