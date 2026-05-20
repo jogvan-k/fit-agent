@@ -33,6 +33,11 @@ type Record struct {
 	Altitude float64
 	// AltitudeValid indicates Altitude is a real value (not just zero).
 	AltitudeValid bool
+	// AltitudeIsBarometric is true when the altitude came from the
+	// EnhancedAltitude field (barometric sensor). False means GPS-derived.
+	// Barometric data is more accurate for relative elevation changes and
+	// allows a tighter noise threshold in gain/loss computation.
+	AltitudeIsBarometric bool
 }
 
 
@@ -320,9 +325,11 @@ func recordFromMesg(r *mesgdef.Record) (Record, bool) {
 	if r.EnhancedAltitude != basetype.Uint32Invalid {
 		rec.Altitude = float64(r.EnhancedAltitude)/5.0 - 500.0
 		rec.AltitudeValid = true
+		rec.AltitudeIsBarometric = true
 	} else if r.Altitude != basetype.Uint16Invalid {
 		rec.Altitude = float64(r.Altitude)/5.0 - 500.0
 		rec.AltitudeValid = true
+		rec.AltitudeIsBarometric = false
 	}
 	return rec, true
 }
