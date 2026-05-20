@@ -68,6 +68,10 @@ type ParsedActivity struct {
 	AvgSpeed float64
 	// Calories is total session calories (kcal).
 	Calories int
+	// ElevationGain is total ascent for the session in meters.
+	ElevationGain float64
+	// ElevationLoss is total descent for the session in meters.
+	ElevationLoss float64
 
 	// Laps are the per-lap summaries in file order.
 	Laps []Lap
@@ -116,6 +120,10 @@ type Lap struct {
 	AvgPaceSecPerKm int
 	// Calories burned during the lap (kcal). 0 when unavailable.
 	Calories int
+	// ElevationGain is total ascent for this lap in meters.
+	ElevationGain float64
+	// ElevationLoss is total descent for this lap in meters.
+	ElevationLoss float64
 }
 
 // Interval is a group of laps that share an intent — either a
@@ -208,6 +216,12 @@ func applySession(out *ParsedActivity, s *mesgdef.Session) {
 	if s.TotalCalories != basetype.Uint16Invalid {
 		out.Calories = int(s.TotalCalories)
 	}
+	if s.TotalAscent != basetype.Uint16Invalid {
+		out.ElevationGain = float64(s.TotalAscent)
+	}
+	if s.TotalDescent != basetype.Uint16Invalid {
+		out.ElevationLoss = float64(s.TotalDescent)
+	}
 }
 
 func lapFromMesg(index int, l *mesgdef.Lap) Lap {
@@ -249,6 +263,12 @@ func lapFromMesg(index int, l *mesgdef.Lap) Lap {
 	}
 	if l.TotalCalories != basetype.Uint16Invalid {
 		out.Calories = int(l.TotalCalories)
+	}
+	if l.TotalAscent != basetype.Uint16Invalid {
+		out.ElevationGain = float64(l.TotalAscent)
+	}
+	if l.TotalDescent != basetype.Uint16Invalid {
+		out.ElevationLoss = float64(l.TotalDescent)
 	}
 	if l.WktStepIndex != typedef.MessageIndexInvalid {
 		out.WorkoutStepIndex = int(l.WktStepIndex)

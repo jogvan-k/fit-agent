@@ -119,6 +119,10 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location, auto
 	if s.TotalElevationGain > 0 {
 		fmt.Fprintf(b, "elevation_gain_m: %s\n", formatFloat(s.TotalElevationGain, 1))
 	}
+	// Elevation loss comes from FIT session data when available.
+	if a.FIT != nil && a.FIT.ElevationLoss > 0 {
+		fmt.Fprintf(b, "elevation_loss_m: %s\n", formatFloat(a.FIT.ElevationLoss, 1))
+	}
 	if s.IcuTrainingLoad > 0 {
 		fmt.Fprintf(b, "tss: %s\n", formatFloat(s.IcuTrainingLoad, 1))
 	}
@@ -204,6 +208,12 @@ func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM in
 	if l.AvgPaceSecPerKm > 0 {
 		fmt.Fprintf(b, "    avg_pace_sec_per_km: %d\n", l.AvgPaceSecPerKm)
 	}
+	if l.ElevationGain > 0 {
+		fmt.Fprintf(b, "    elevation_gain_m: %s\n", formatFloat(l.ElevationGain, 1))
+	}
+	if l.ElevationLoss > 0 {
+		fmt.Fprintf(b, "    elevation_loss_m: %s\n", formatFloat(l.ElevationLoss, 1))
+	}
 	if l.Calories > 0 {
 		fmt.Fprintf(b, "    calories: %d\n", l.Calories)
 	}
@@ -234,6 +244,9 @@ func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM in
 				if s.elevationGainM > 0 {
 					fmt.Fprintf(b, "        elevation_gain_m: %s\n", formatFloat(s.elevationGainM, 1))
 				}
+				if s.elevationLossM > 0 {
+					fmt.Fprintf(b, "        elevation_loss_m: %s\n", formatFloat(s.elevationLossM, 1))
+				}
 			}
 		}
 	}
@@ -263,6 +276,7 @@ type autoSplitSegment struct {
 	maxHR           int
 	avgCadence      int
 	elevationGainM  float64
+	elevationLossM  float64
 }
 
 // autoSplitLap divides a single lap into segments of splitM metres using the
@@ -421,6 +435,8 @@ func segStatsFromRecords(recs []fitparse.Record, segment int, segStart, segEnd, 
 	}
 	if firstAltSet && lastAlt > firstAlt {
 		seg.elevationGainM = lastAlt - firstAlt
+	} else if firstAltSet && lastAlt < firstAlt {
+		seg.elevationLossM = firstAlt - lastAlt
 	}
 	return seg
 }
