@@ -367,14 +367,20 @@ func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record) []autoS
 }
 
 // segStatsFromRecords computes per-segment averages from the subset of records
+// segStatsFromRecords computes per-segment averages from the subset of records
 // whose distance falls within [segStart, segEnd).
+// Elevation uses a hysteresis filter to suppress GPS noise: altitude changes
+// are only committed once they exceed minElevDelta metres from the last
+// committed value, matching Garmin's approach.
+const minElevDelta = 5.0 // metres
+
 func segStatsFromRecords(recs []fitparse.Record, segment int, segStart, segEnd, dist float64) autoSplitSegment {
 	var hrSum, hrCount, maxHR, cadSum, cadCount int
 	var speedSum float64
 	speedCount := 0
 	var cumGain, cumLoss float64
-	var prevAlt float64
-	prevAltSet := false
+	var committedAlt float64
+	committedAltSet := false
 	var firstTime, lastTime time.Time
 
 	for _, r := range recs {
@@ -397,16 +403,19 @@ func segStatsFromRecords(recs []fitparse.Record, segment int, segStart, segEnd, 
 			speedCount++
 		}
 		if r.AltitudeValid {
-			if prevAltSet {
-				delta := r.Altitude - prevAlt
-				if delta > 0 {
+			if !committedAltSet {
+				committedAlt = r.Altitude
+				committedAltSet = true
+			} else {
+				delta := r.Altitude - committedAlt
+				if delta >= minElevDelta {
 					cumGain += delta
-				} else {
+					committedAlt = r.Altitude
+				} else if delta <= -minElevDelta {
 					cumLoss -= delta // store as positive
+					committedAlt = r.Altitude
 				}
 			}
-			prevAlt = r.Altitude
-			prevAltSet = true
 		}
 		if firstTime.IsZero() {
 			firstTime = r.Timestamp
