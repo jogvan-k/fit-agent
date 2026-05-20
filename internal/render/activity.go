@@ -152,7 +152,7 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location, auto
 	if len(a.FIT.Laps) > 0 {
 		b.WriteString("laps:\n")
 		for _, l := range a.FIT.Laps {
-			writeLap(b, l, loc, autoSplitM)
+			writeLap(b, l, loc, autoSplitM, a.FIT.Records)
 		}
 	}
 	if len(a.FIT.Intervals) > 0 {
@@ -163,7 +163,7 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location, auto
 	}
 }
 
-func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM int) {
+func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM int, records []fitparse.Record) {
 	fmt.Fprintf(b, "  - i: %d\n", l.Index)
 	if l.Intensity != "" {
 		fmt.Fprintf(b, "    type: %s\n", yamlString(l.Intensity))
@@ -209,7 +209,7 @@ func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM in
 	}
 	// Auto-splits: divide long unsegmented active laps into equal segments.
 	if autoSplitM > 0 && l.Distance > float64(autoSplitM) {
-		segs := autoSplitLap(l, autoSplitM)
+		segs := autoSplitLap(l, autoSplitM, records)
 		if len(segs) > 1 {
 			b.WriteString("    auto_splits:\n")
 			for _, s := range segs {
@@ -230,6 +230,9 @@ func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM in
 				}
 				if s.avgCadence > 0 {
 					fmt.Fprintf(b, "        avg_cadence: %d\n", s.avgCadence)
+				}
+				if s.elevationGainM > 0 {
+					fmt.Fprintf(b, "        elevation_gain_m: %s\n", formatFloat(s.elevationGainM, 1))
 				}
 			}
 		}
@@ -259,16 +262,16 @@ type autoSplitSegment struct {
 	avgHR           int
 	maxHR           int
 	avgCadence      int
+	elevationGainM  float64
 }
 
-// autoSplitLap divides a single lap proportionally into segments of
-// splitM metres (plus a remainder tail). Because the FIT decoder only
-// stores lap-level summaries (not per-record streams), all segments
-// inherit the lap's average HR, cadence, and pace — which is accurate
-// for steady efforts and a reasonable approximation for varied pacing.
-// The last segment covers the remainder distance.
+// autoSplitLap divides a single lap into segments of splitM metres using the
+// per-second FIT record stream. Each segment gets real averages computed from
+// the records whose cumulative distance falls within the segment's range.
+// When records are absent or insufficient, falls back to proportional
+// approximation from the lap summary.
 // Only laps with intensity "active" are split; all others return nil.
-func autoSplitLap(l fitparse.Lap, splitM int) []autoSplitSegment {
+func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record) []autoSplitSegment {
 	if l.Intensity != "active" {
 		return nil
 	}
@@ -278,36 +281,146 @@ func autoSplitLap(l fitparse.Lap, splitM int) []autoSplitSegment {
 	n := int(l.Distance / float64(splitM))
 	remainder := l.Distance - float64(n)*float64(splitM)
 	total := n
-	if remainder > 0.5 { // ignore sub-half-metre rounding dust
+	if remainder > 0.5 {
 		total++
 	}
 	if total < 2 {
 		return nil
 	}
 
-	segs := make([]autoSplitSegment, total)
-	totalDurS := int(l.Duration.Seconds() + 0.5)
-
-	for i := 0; i < total; i++ {
-		dist := float64(splitM)
-		if i == n { // last remainder segment
-			dist = remainder
-		}
-		frac := dist / l.Distance
-		durS := int(float64(totalDurS)*frac + 0.5)
-		pace := 0
-		if dist > 0 && durS > 0 {
-			pace = int(float64(durS)/(dist/1000.0) + 0.5)
-		}
-		segs[i] = autoSplitSegment{
-			segment:         i + 1,
-			distanceM:       dist,
-			durationS:       durS,
-			avgPaceSecPerKm: pace,
-			avgHR:           l.AvgHR,
-			maxHR:           l.MaxHR,
-			avgCadence:      l.AvgCadence,
+	// Find the lap's distance offset: the cumulative distance at the start of
+	// this lap. We locate it by finding the first record at or after the lap's
+	// start time.
+	var lapStartDist float64
+	lapStartDistSet := false
+	if len(records) > 0 && !l.StartLocal.IsZero() {
+		for _, r := range records {
+			if !r.Timestamp.Before(l.StartLocal) {
+				lapStartDist = r.Distance
+				lapStartDistSet = true
+				break
+			}
 		}
 	}
+
+	// Filter to records belonging to this lap by distance range.
+	lapEndDist := lapStartDist + l.Distance
+	var lapRecs []fitparse.Record
+	if lapStartDistSet && len(records) > 0 {
+		for _, r := range records {
+			if r.Distance >= lapStartDist && r.Distance <= lapEndDist {
+				lapRecs = append(lapRecs, r)
+			}
+		}
+	}
+
+	segs := make([]autoSplitSegment, total)
+	for i := 0; i < total; i++ {
+		segStart := lapStartDist + float64(i*splitM)
+		segEnd := segStart + float64(splitM)
+		if i == n {
+			segEnd = lapEndDist
+		}
+		dist := segEnd - segStart
+
+		var seg autoSplitSegment
+		seg.segment = i + 1
+		seg.distanceM = dist
+
+		if len(lapRecs) > 0 {
+			seg = segStatsFromRecords(lapRecs, i+1, segStart, segEnd, dist)
+		} else {
+			// Fallback: proportional from lap summary
+			frac := dist / l.Distance
+			durS := int(l.Duration.Seconds()*frac + 0.5)
+			pace := 0
+			if dist > 0 && durS > 0 {
+				pace = int(float64(durS)/(dist/1000.0) + 0.5)
+			}
+			seg = autoSplitSegment{
+				segment:         i + 1,
+				distanceM:       dist,
+				durationS:       durS,
+				avgPaceSecPerKm: pace,
+				avgHR:           l.AvgHR,
+				maxHR:           l.MaxHR,
+				avgCadence:      l.AvgCadence,
+			}
+		}
+		segs[i] = seg
+	}
 	return segs
+}
+
+// segStatsFromRecords computes per-segment averages from the subset of records
+// whose distance falls within [segStart, segEnd).
+func segStatsFromRecords(recs []fitparse.Record, segment int, segStart, segEnd, dist float64) autoSplitSegment {
+	var hrSum, hrCount, maxHR, cadSum, cadCount int
+	var speedSum float64
+	speedCount := 0
+	var firstAlt, lastAlt float64
+	firstAltSet := false
+	var firstTime, lastTime time.Time
+
+	for _, r := range recs {
+		if r.Distance < segStart || r.Distance > segEnd {
+			continue
+		}
+		if r.HR > 0 {
+			hrSum += r.HR
+			hrCount++
+			if r.HR > maxHR {
+				maxHR = r.HR
+			}
+		}
+		if r.Cadence > 0 {
+			cadSum += r.Cadence
+			cadCount++
+		}
+		if r.Speed > 0 {
+			speedSum += r.Speed
+			speedCount++
+		}
+		if r.AltitudeValid {
+			if !firstAltSet {
+				firstAlt = r.Altitude
+				firstAltSet = true
+			}
+			lastAlt = r.Altitude
+		}
+		if firstTime.IsZero() {
+			firstTime = r.Timestamp
+		}
+		lastTime = r.Timestamp
+	}
+
+	seg := autoSplitSegment{
+		segment:   segment,
+		distanceM: dist,
+	}
+	if !firstTime.IsZero() && !lastTime.IsZero() {
+		seg.durationS = int(lastTime.Sub(firstTime).Seconds() + 0.5)
+		if seg.durationS < 1 {
+			seg.durationS = 1
+		}
+	}
+	if seg.durationS > 0 && dist > 0 {
+		seg.avgPaceSecPerKm = int(float64(seg.durationS)/(dist/1000.0) + 0.5)
+	} else if speedCount > 0 {
+		avgSpeed := speedSum / float64(speedCount)
+		if avgSpeed > 0 {
+			seg.avgPaceSecPerKm = int(1000.0/avgSpeed + 0.5)
+		}
+	}
+	if hrCount > 0 {
+		seg.avgHR = hrSum / hrCount
+		seg.maxHR = maxHR
+	}
+	if cadCount > 0 {
+		seg.avgCadence = cadSum / cadCount
+	}
+	if firstAltSet && lastAlt > firstAlt {
+		seg.elevationGainM = lastAlt - firstAlt
+	}
+	return seg
 }
