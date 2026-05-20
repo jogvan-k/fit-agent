@@ -372,8 +372,9 @@ func segStatsFromRecords(recs []fitparse.Record, segment int, segStart, segEnd, 
 	var hrSum, hrCount, maxHR, cadSum, cadCount int
 	var speedSum float64
 	speedCount := 0
-	var firstAlt, lastAlt float64
-	firstAltSet := false
+	var cumGain, cumLoss float64
+	var prevAlt float64
+	prevAltSet := false
 	var firstTime, lastTime time.Time
 
 	for _, r := range recs {
@@ -396,11 +397,16 @@ func segStatsFromRecords(recs []fitparse.Record, segment int, segStart, segEnd, 
 			speedCount++
 		}
 		if r.AltitudeValid {
-			if !firstAltSet {
-				firstAlt = r.Altitude
-				firstAltSet = true
+			if prevAltSet {
+				delta := r.Altitude - prevAlt
+				if delta > 0 {
+					cumGain += delta
+				} else {
+					cumLoss -= delta // store as positive
+				}
 			}
-			lastAlt = r.Altitude
+			prevAlt = r.Altitude
+			prevAltSet = true
 		}
 		if firstTime.IsZero() {
 			firstTime = r.Timestamp
@@ -433,10 +439,11 @@ func segStatsFromRecords(recs []fitparse.Record, segment int, segStart, segEnd, 
 	if cadCount > 0 {
 		seg.avgCadence = cadSum / cadCount
 	}
-	if firstAltSet && lastAlt > firstAlt {
-		seg.elevationGainM = lastAlt - firstAlt
-	} else if firstAltSet && lastAlt < firstAlt {
-		seg.elevationLossM = firstAlt - lastAlt
+	if cumGain > 0 {
+		seg.elevationGainM = cumGain
+	}
+	if cumLoss > 0 {
+		seg.elevationLossM = cumLoss
 	}
 	return seg
 }
