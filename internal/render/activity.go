@@ -156,7 +156,7 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location, auto
 	if len(a.FIT.Laps) > 0 {
 		b.WriteString("laps:\n")
 		for _, l := range a.FIT.Laps {
-			writeLap(b, l, loc, autoSplitM, a.FIT.Records)
+			writeLap(b, l, loc, autoSplitM, a.FIT.Records, a.FIT.ElevationGain, a.FIT.ElevationLoss)
 		}
 	}
 	if len(a.FIT.Intervals) > 0 {
@@ -167,7 +167,7 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location, auto
 	}
 }
 
-func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM int, records []fitparse.Record) {
+func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM int, records []fitparse.Record, sessionGain, sessionLoss float64) {
 	fmt.Fprintf(b, "  - i: %d\n", l.Index)
 	if l.Intensity != "" {
 		fmt.Fprintf(b, "    type: %s\n", yamlString(l.Intensity))
@@ -219,7 +219,7 @@ func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM in
 	}
 	// Auto-splits: divide long unsegmented active laps into equal segments.
 	if autoSplitM > 0 && l.Distance > float64(autoSplitM) {
-		segs := autoSplitLap(l, autoSplitM, records)
+		segs := autoSplitLap(l, autoSplitM, records, sessionGain, sessionLoss)
 		if len(segs) > 1 {
 			b.WriteString("    auto_splits:\n")
 			for _, s := range segs {
@@ -285,7 +285,7 @@ type autoSplitSegment struct {
 // When records are absent or insufficient, falls back to proportional
 // approximation from the lap summary.
 // Only laps with intensity "active" are split; all others return nil.
-func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record) []autoSplitSegment {
+func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record, sessionGain, sessionLoss float64) []autoSplitSegment {
 	if l.Intensity != "active" {
 		return nil
 	}
@@ -363,25 +363,114 @@ func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record) []autoS
 		}
 		segs[i] = seg
 	}
+
+	// Use lap elevation totals; fall back to session totals when lap values
+	// are absent (some Garmin firmware omits TotalDescent from lap messages).
+	lapGain := l.ElevationGain
+	lapLoss := l.ElevationLoss
+	if lapGain == 0 && sessionGain > 0 {
+		lapGain = sessionGain
+	}
+	if lapLoss == 0 && sessionLoss > 0 {
+		lapLoss = sessionLoss
+	}
+
+	// Elevation: use per-record altitude shape to distribute gain/loss across
+	// segments, then scale so the segment totals match the lap's own
+	// Garmin-filtered TotalAscent/TotalDescent. This gives per-segment
+	// granularity without the GPS drift artefacts of raw per-sample summation.
+	if len(lapRecs) > 0 && (lapGain > 0 || lapLoss > 0) {
+		rawGains := make([]float64, total)
+		rawLosses := make([]float64, total)
+		for i := 0; i < total; i++ {
+			segStart := lapStartDist + float64(i*splitM)
+			segEnd := segStart + float64(splitM)
+			if i == n {
+				segEnd = lapEndDist
+			}
+			g, lo := rawElevFromRecords(lapRecs, segStart, segEnd)
+			rawGains[i] = g
+			rawLosses[i] = lo
+		}
+		scaleAndApplyElev(segs, rawGains, rawLosses, lapGain, lapLoss)
+	} else if lapGain > 0 || lapLoss > 0 {
+		// No records: fall back to equal distribution
+		for i := range segs {
+			frac := segs[i].distanceM / l.Distance
+			segs[i].elevationGainM = lapGain * frac
+			segs[i].elevationLossM = lapLoss * frac
+		}
+	}
+
 	return segs
 }
 
-// segStatsFromRecords computes per-segment averages from the subset of records
+// rawElevFromRecords computes unscaled cumulative gain and loss from records
+// in [segStart, segEnd) using a simple 3m hysteresis to get relative shape.
+func rawElevFromRecords(recs []fitparse.Record, segStart, segEnd float64) (gain, loss float64) {
+	const shapeHysteresis = 3.0
+	var committed float64
+	committedSet := false
+	for _, r := range recs {
+		if !r.AltitudeValid || r.Distance < segStart || r.Distance > segEnd {
+			continue
+		}
+		if !committedSet {
+			committed = r.Altitude
+			committedSet = true
+			continue
+		}
+		delta := r.Altitude - committed
+		if delta >= shapeHysteresis {
+			gain += delta
+			committed = r.Altitude
+		} else if delta <= -shapeHysteresis {
+			loss -= delta
+			committed = r.Altitude
+		}
+	}
+	return
+}
+
+// scaleAndApplyElev scales raw per-segment gain/loss arrays so their sums
+// match the lap totals, then writes the scaled values back into segs.
+func scaleAndApplyElev(segs []autoSplitSegment, rawGains, rawLosses []float64, lapGain, lapLoss float64) {
+	var totalRawGain, totalRawLoss float64
+	for i := range segs {
+		totalRawGain += rawGains[i]
+		totalRawLoss += rawLosses[i]
+	}
+	for i := range segs {
+		if lapGain > 0 && totalRawGain > 0 {
+			segs[i].elevationGainM = rawGains[i] / totalRawGain * lapGain
+		} else if lapGain > 0 {
+			// All segments had zero raw gain — distribute equally
+			segs[i].elevationGainM = lapGain * segs[i].distanceM / totalDist(segs)
+		}
+		if lapLoss > 0 && totalRawLoss > 0 {
+			segs[i].elevationLossM = rawLosses[i] / totalRawLoss * lapLoss
+		} else if lapLoss > 0 {
+			segs[i].elevationLossM = lapLoss * segs[i].distanceM / totalDist(segs)
+		}
+	}
+}
+
+func totalDist(segs []autoSplitSegment) float64 {
+	var d float64
+	for _, s := range segs {
+		d += s.distanceM
+	}
+	return d
+}
+
 // segStatsFromRecords computes per-segment averages from the subset of records
 // whose distance falls within [segStart, segEnd).
-// Elevation uses a hysteresis filter to suppress GPS noise: altitude changes
-// are only committed once they exceed minElevDelta metres from the last
-// committed value. 1m gives per-metre resolution; totals will be slightly
-// higher than the device-reported lap values which use more aggressive filtering.
-const minElevDelta = 1.0 // metres
-
+// Elevation is handled by the caller (autoSplitLap) using the lap's own
+// Garmin-filtered TotalAscent/TotalDescent values distributed proportionally.
 func segStatsFromRecords(recs []fitparse.Record, segment int, segStart, segEnd, dist float64) autoSplitSegment {
 	var hrSum, hrCount, maxHR, cadSum, cadCount int
 	var speedSum float64
 	speedCount := 0
-	var cumGain, cumLoss float64
-	var committedAlt float64
-	committedAltSet := false
 	var firstTime, lastTime time.Time
 
 	for _, r := range recs {
@@ -402,21 +491,6 @@ func segStatsFromRecords(recs []fitparse.Record, segment int, segStart, segEnd, 
 		if r.Speed > 0 {
 			speedSum += r.Speed
 			speedCount++
-		}
-		if r.AltitudeValid {
-			if !committedAltSet {
-				committedAlt = r.Altitude
-				committedAltSet = true
-			} else {
-				delta := r.Altitude - committedAlt
-				if delta >= minElevDelta {
-					cumGain += delta
-					committedAlt = r.Altitude
-				} else if delta <= -minElevDelta {
-					cumLoss -= delta // store as positive
-					committedAlt = r.Altitude
-				}
-			}
 		}
 		if firstTime.IsZero() {
 			firstTime = r.Timestamp
@@ -448,12 +522,6 @@ func segStatsFromRecords(recs []fitparse.Record, segment int, segStart, segEnd, 
 	}
 	if cadCount > 0 {
 		seg.avgCadence = cadSum / cadCount
-	}
-	if cumGain > 0 {
-		seg.elevationGainM = cumGain
-	}
-	if cumLoss > 0 {
-		seg.elevationLossM = cumLoss
 	}
 	return seg
 }

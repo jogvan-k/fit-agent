@@ -20,7 +20,7 @@ func TestAutoSplitLap_ExactDivisible(t *testing.T) {
 		AvgCadence:      80,
 		AvgPaceSecPerKm: 330,
 	}
-	segs := autoSplitLap(l, 1000, nil) // nil records → fallback
+	segs := autoSplitLap(l, 1000, nil, 0, 0) // nil records → fallback
 	if len(segs) != 10 {
 		t.Fatalf("expected 10 segments, got %d", len(segs))
 	}
@@ -47,7 +47,7 @@ func TestAutoSplitLap_RemainderTail(t *testing.T) {
 		Distance:  10500.0,
 		Duration:  58 * time.Minute,
 	}
-	segs := autoSplitLap(l, 1000, nil)
+	segs := autoSplitLap(l, 1000, nil, 0, 0)
 	if len(segs) != 11 {
 		t.Fatalf("expected 11 segments (10 + remainder), got %d", len(segs))
 	}
@@ -64,7 +64,7 @@ func TestAutoSplitLap_SubThreshold(t *testing.T) {
 		Distance:  800.0,
 		Duration:  3 * time.Minute,
 	}
-	segs := autoSplitLap(l, 1000, nil)
+	segs := autoSplitLap(l, 1000, nil, 0, 0)
 	if len(segs) != 0 {
 		t.Errorf("expected no segments for sub-threshold lap, got %d", len(segs))
 	}
@@ -77,7 +77,7 @@ func TestAutoSplitLap_NonActiveNotSplit(t *testing.T) {
 		Distance:  5000.0,
 		Duration:  30 * time.Minute,
 	}
-	segs := autoSplitLap(l, 1000, nil)
+	segs := autoSplitLap(l, 1000, nil, 0, 0)
 	if len(segs) != 0 {
 		t.Errorf("expected no segments for non-active lap, got %d", len(segs))
 	}
