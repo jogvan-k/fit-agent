@@ -40,7 +40,7 @@ type Record struct {
 	AltitudeIsBarometric bool
 }
 
-
+// ParsedActivity is the high-level shape produced from a .fit file.
 //
 // All durations are time.Duration; distances are meters; speeds are m/s;
 // pace is integer seconds per kilometer; HR is bpm; power is watts.
