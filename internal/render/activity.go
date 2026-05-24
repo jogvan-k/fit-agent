@@ -352,11 +352,18 @@ func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record, hasBaro
 	if l.Distance <= 0 || splitM <= 0 {
 		return nil
 	}
+	const remainderTolerance = 20.0 // metres; remainder below this merges into last segment
+
 	n := int(l.Distance / float64(splitM))
 	remainder := l.Distance - float64(n)*float64(splitM)
 	total := n
+	mergeRemainder := false
 	if remainder > 0.5 {
-		total++
+		if remainder < remainderTolerance {
+			mergeRemainder = true // absorb remainder into last full segment
+		} else {
+			total++
+		}
 	}
 	if total < 2 {
 		return nil
@@ -392,7 +399,8 @@ func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record, hasBaro
 	for i := 0; i < total; i++ {
 		segStart := lapStartDist + float64(i*splitM)
 		segEnd := segStart + float64(splitM)
-		if i == n {
+		// Extend the last segment to cover any merged remainder
+		if i == total-1 && (mergeRemainder || i == n) {
 			segEnd = lapEndDist
 		}
 		dist := segEnd - segStart
@@ -431,7 +439,7 @@ func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record, hasBaro
 	// then apply hysteresis on the smoothed values per segment.
 	// See docs/elevation-algorithm.md for rationale.
 	if len(lapRecs) > 0 {
-		applyElevation(segs, lapRecs, lapStartDist, float64(splitM), lapEndDist, n, hasBarometer)
+		applyElevation(segs, lapRecs, lapStartDist, float64(splitM), lapEndDist, total-1, hasBarometer)
 	}
 
 	return segs

@@ -57,6 +57,46 @@ func TestAutoSplitLap_RemainderTail(t *testing.T) {
 	}
 }
 
+func TestAutoSplitLap_RemainderMerged(t *testing.T) {
+	// 2015m with 1000m split: remainder = 15m < 20m tolerance → merge into last segment
+	l := fitparse.Lap{
+		Index:     1,
+		Intensity: "active",
+		Distance:  2015.0,
+		Duration:  10 * time.Minute,
+	}
+	segs := autoSplitLap(l, 1000, nil, false)
+	if len(segs) != 2 {
+		t.Fatalf("expected 2 segments (remainder merged), got %d", len(segs))
+	}
+	if segs[0].distanceM != 1000.0 {
+		t.Errorf("seg[0] distanceM = %f, want 1000", segs[0].distanceM)
+	}
+	if segs[1].distanceM != 1015.0 {
+		t.Errorf("seg[1] distanceM = %f, want 1015", segs[1].distanceM)
+	}
+}
+
+func TestAutoSplitLap_RemainderExactlyAtTolerance(t *testing.T) {
+	// 1020m with 1000m split: remainder = 20m, which equals tolerance (not < 20) → kept as tail
+	l := fitparse.Lap{
+		Index:     1,
+		Intensity: "active",
+		Distance:  1020.0,
+		Duration:  5 * time.Minute,
+	}
+	segs := autoSplitLap(l, 1000, nil, false)
+	if len(segs) != 2 {
+		t.Fatalf("expected 2 segments (20m tail kept), got %d", len(segs))
+	}
+	if segs[0].distanceM != 1000.0 {
+		t.Errorf("seg[0] distanceM = %f, want 1000", segs[0].distanceM)
+	}
+	if segs[1].distanceM != 20.0 {
+		t.Errorf("seg[1] distanceM = %f, want 20", segs[1].distanceM)
+	}
+}
+
 func TestAutoSplitLap_SubThreshold(t *testing.T) {
 	l := fitparse.Lap{
 		Index:     1,
