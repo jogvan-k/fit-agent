@@ -20,7 +20,7 @@ func TestAutoSplitLap_ExactDivisible(t *testing.T) {
 		AvgCadence:      80,
 		AvgPaceSecPerKm: 330,
 	}
-	segs := autoSplitLap(l, 1000, nil) // nil records → fallback
+	segs := autoSplitLap(l, 1000, nil, false) // nil records → fallback
 	if len(segs) != 10 {
 		t.Fatalf("expected 10 segments, got %d", len(segs))
 	}
@@ -47,7 +47,7 @@ func TestAutoSplitLap_RemainderTail(t *testing.T) {
 		Distance:  10500.0,
 		Duration:  58 * time.Minute,
 	}
-	segs := autoSplitLap(l, 1000, nil)
+	segs := autoSplitLap(l, 1000, nil, false)
 	if len(segs) != 11 {
 		t.Fatalf("expected 11 segments (10 + remainder), got %d", len(segs))
 	}
@@ -64,7 +64,7 @@ func TestAutoSplitLap_SubThreshold(t *testing.T) {
 		Distance:  800.0,
 		Duration:  3 * time.Minute,
 	}
-	segs := autoSplitLap(l, 1000, nil)
+	segs := autoSplitLap(l, 1000, nil, false)
 	if len(segs) != 0 {
 		t.Errorf("expected no segments for sub-threshold lap, got %d", len(segs))
 	}
@@ -77,7 +77,7 @@ func TestAutoSplitLap_NonActiveNotSplit(t *testing.T) {
 		Distance:  5000.0,
 		Duration:  30 * time.Minute,
 	}
-	segs := autoSplitLap(l, 1000, nil)
+	segs := autoSplitLap(l, 1000, nil, false)
 	if len(segs) != 0 {
 		t.Errorf("expected no segments for non-active lap, got %d", len(segs))
 	}
@@ -167,5 +167,42 @@ func TestActivityDayYAML_AutoSplits_Disabled(t *testing.T) {
 	}
 	if strings.Contains(string(got), "auto_splits:") {
 		t.Error("expected no auto_splits block when disabled (autoSplitM=0)")
+	}
+}
+
+// TestApplyElevation_BarometricVsGPS verifies that barometric=true uses the 2 m
+// threshold and barometric=false uses the 8 m threshold.
+func TestApplyElevation_BarometricVsGPS(t *testing.T) {
+	// Records with a gradual 6 m climb over many steps. After EWMA smoothing
+	// (alpha=0.1), the smoothed rise should exceed the 2 m barometric threshold
+	// but remain below the 8 m GPS threshold at any single step.
+	recs := []fitparse.Record{
+		{Distance: 0, Altitude: 100, AltitudeValid: true},
+		{Distance: 50, Altitude: 101, AltitudeValid: true},
+		{Distance: 100, Altitude: 102, AltitudeValid: true},
+		{Distance: 150, Altitude: 103, AltitudeValid: true},
+		{Distance: 200, Altitude: 104, AltitudeValid: true},
+		{Distance: 250, Altitude: 105, AltitudeValid: true},
+		{Distance: 300, Altitude: 106, AltitudeValid: true},
+		{Distance: 350, Altitude: 107, AltitudeValid: true},
+		{Distance: 400, Altitude: 108, AltitudeValid: true},
+		{Distance: 450, Altitude: 109, AltitudeValid: true},
+		{Distance: 500, Altitude: 110, AltitudeValid: true},
+	}
+
+	run := func(barometric bool) float64 {
+		segs := []autoSplitSegment{{segment: 1, distanceM: 500}}
+		applyElevation(segs, recs, 0, 500, 500, 0, barometric)
+		return segs[0].elevationGainM
+	}
+
+	gainBaro := run(true)
+	gainGPS := run(false)
+
+	if gainBaro <= 0 {
+		t.Errorf("expected gain > 0 with barometric threshold (2m); got %v", gainBaro)
+	}
+	if gainGPS != 0 {
+		t.Errorf("expected gain == 0 with GPS threshold (8m) for gradual 10m climb; got %v", gainGPS)
 	}
 }

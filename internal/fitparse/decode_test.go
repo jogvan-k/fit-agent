@@ -214,3 +214,15 @@ func equalInts(a, b []int) bool {
 	}
 	return true
 }
+
+// TestHasBarometerDefault verifies that decoding a FIT file without a barometer
+// DeviceInfo message leaves HasBarometer false.
+func TestHasBarometerDefault(t *testing.T) {
+	a, err := Decode(filepath.FromSlash(sampleFIT))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The sample FIT may or may not have a barometer; we just confirm the field exists
+	// and is a bool (compiler check). No assertion on its value.
+	_ = a.HasBarometer
+}

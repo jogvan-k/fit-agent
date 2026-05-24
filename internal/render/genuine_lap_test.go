@@ -26,11 +26,10 @@ func makeGenuineLapDay(
 		dists := []float64{0, 150, 350, 500}
 		for i, alt := range alts {
 			records = append(records, fitparse.Record{
-				Timestamp:            lapStart.Add(time.Duration(i*30) * time.Second),
-				Distance:             dists[i],
-				Altitude:             alt,
-				AltitudeValid:        true,
-				AltitudeIsBarometric: true,
+				Timestamp:     lapStart.Add(time.Duration(i*30) * time.Second),
+				Distance:      dists[i],
+				Altitude:      alt,
+				AltitudeValid: true,
 			})
 		}
 	}
@@ -49,6 +48,7 @@ func makeGenuineLapDay(
 					Distance:   500.0,
 				},
 				FIT: &fitparse.ParsedActivity{
+					HasBarometer: withAltRecords, // barometric when altitude records present
 					Records: records,
 					Laps: []fitparse.Lap{
 						{

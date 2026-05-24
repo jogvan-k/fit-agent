@@ -165,7 +165,7 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location, auto
 	if len(a.FIT.Laps) > 0 {
 		b.WriteString("laps:\n")
 		for _, l := range a.FIT.Laps {
-			writeLap(b, l, loc, autoSplitM, a.FIT.Records, windDeg)
+			writeLap(b, l, loc, autoSplitM, a.FIT.Records, windDeg, a.FIT.HasBarometer)
 		}
 	}
 	if len(a.FIT.Intervals) > 0 {
@@ -176,7 +176,7 @@ func writeActivityDoc(b *bytes.Buffer, a ActivityInput, loc *time.Location, auto
 	}
 }
 
-func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM int, records []fitparse.Record, windDeg *int) {
+func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM int, records []fitparse.Record, windDeg *int, hasBarometer bool) {
 	fmt.Fprintf(b, "  - i: %d\n", l.Index)
 	if l.Intensity != "" {
 		fmt.Fprintf(b, "    type: %s\n", yamlString(l.Intensity))
@@ -241,11 +241,11 @@ func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM in
 			}
 		}
 		if len(lapRecs) > 0 {
-			segs := []autoSplitSegment{{segment: 1, distanceM: l.Distance}}
-			applyElevation(segs, lapRecs, lapStartDist, l.Distance, lapEndDist, 0)
-			elevGain = segs[0].elevationGainM
-			elevLoss = segs[0].elevationLossM
-		}
+				segs := []autoSplitSegment{{segment: 1, distanceM: l.Distance}}
+				applyElevation(segs, lapRecs, lapStartDist, l.Distance, lapEndDist, 0, hasBarometer)
+				elevGain = segs[0].elevationGainM
+				elevLoss = segs[0].elevationLossM
+			}
 	}
 	if elevGain > 0 {
 		fmt.Fprintf(b, "    elevation_gain_m: %s\n", formatFloat(elevGain, 1))
@@ -271,7 +271,7 @@ func writeLap(b *bytes.Buffer, l fitparse.Lap, loc *time.Location, autoSplitM in
 	}
 	// Auto-splits: divide long unsegmented active laps into equal segments.
 	if autoSplitM > 0 && l.Distance > float64(autoSplitM) {
-		segs := autoSplitLap(l, autoSplitM, records)
+		segs := autoSplitLap(l, autoSplitM, records, hasBarometer)
 		if len(segs) > 1 {
 			b.WriteString("    auto_splits:\n")
 			for _, s := range segs {
@@ -345,7 +345,7 @@ type autoSplitSegment struct {
 // When records are absent or insufficient, falls back to proportional
 // approximation from the lap summary.
 // Only laps with intensity "active" are split; all others return nil.
-func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record) []autoSplitSegment {
+func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record, hasBarometer bool) []autoSplitSegment {
 	if l.Intensity != "active" {
 		return nil
 	}
@@ -431,7 +431,7 @@ func autoSplitLap(l fitparse.Lap, splitM int, records []fitparse.Record) []autoS
 	// then apply hysteresis on the smoothed values per segment.
 	// See docs/elevation-algorithm.md for rationale.
 	if len(lapRecs) > 0 {
-		applyElevation(segs, lapRecs, lapStartDist, float64(splitM), lapEndDist, n)
+		applyElevation(segs, lapRecs, lapStartDist, float64(splitM), lapEndDist, n, hasBarometer)
 	}
 
 	return segs
@@ -449,17 +449,9 @@ func elevThreshold(barometric bool) float64 {
 // applyElevation computes per-segment elevation gain/loss using a two-step
 // algorithm: EWMA smoothing over the full lap, then per-segment hysteresis.
 // It writes directly into segs[].elevationGainM and segs[].elevationLossM.
-func applyElevation(segs []autoSplitSegment, lapRecs []fitparse.Record, lapStartDist, splitM, lapEndDist float64, n int) {
+func applyElevation(segs []autoSplitSegment, lapRecs []fitparse.Record, lapStartDist, splitM, lapEndDist float64, n int, barometric bool) {
 	const ewmaAlpha = 0.1 // smoothing factor; lower = more smoothing
 
-	// Detect source type from first record with valid altitude.
-	barometric := false
-	for _, r := range lapRecs {
-		if r.AltitudeValid {
-			barometric = r.AltitudeIsBarometric
-			break
-		}
-	}
 	thresh := elevThreshold(barometric)
 
 	// Pass 1: EWMA smooth across the entire lap altitude stream.

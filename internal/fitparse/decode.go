@@ -33,11 +33,6 @@ type Record struct {
 	Altitude float64
 	// AltitudeValid indicates Altitude is a real value (not just zero).
 	AltitudeValid bool
-	// AltitudeIsBarometric is true when the altitude came from the
-	// EnhancedAltitude field (barometric sensor). False means GPS-derived.
-	// Barometric data is more accurate for relative elevation changes and
-	// allows a tighter noise threshold in gain/loss computation.
-	AltitudeIsBarometric bool
 	// Lat is latitude in degrees. 0 when unavailable; check LatLonValid.
 	Lat float64
 	// Lon is longitude in degrees. 0 when unavailable; check LatLonValid.
@@ -92,6 +87,9 @@ type ParsedActivity struct {
 	// Records are the per-second data points from the FIT record stream.
 	// They are ordered by distance and can be used for granular segment stats.
 	Records []Record
+	// HasBarometer is true when the FIT file contains a DeviceInfo message
+	// for a local barometer (SourceType=local, DeviceType=barometer).
+	HasBarometer bool
 }
 
 // Lap is a per-lap summary derived from the FIT file's lap messages.
@@ -185,6 +183,12 @@ func DecodeReader(r io.Reader) (*ParsedActivity, error) {
 		case typedef.MesgNumRecord:
 			if rec, ok := recordFromMesg(mesgdef.NewRecord(m)); ok {
 				out.Records = append(out.Records, rec)
+			}
+		case typedef.MesgNumDeviceInfo:
+			di := mesgdef.NewDeviceInfo(m)
+			if di.SourceType == typedef.SourceTypeLocal &&
+				typedef.LocalDeviceType(di.DeviceType) == typedef.LocalDeviceTypeBarometer {
+				out.HasBarometer = true
 			}
 		}
 	}
@@ -331,11 +335,10 @@ func recordFromMesg(r *mesgdef.Record) (Record, bool) {
 	if r.EnhancedAltitude != basetype.Uint32Invalid {
 		rec.Altitude = float64(r.EnhancedAltitude)/5.0 - 500.0
 		rec.AltitudeValid = true
-		rec.AltitudeIsBarometric = true
+		// AltitudeIsBarometric removed — use ParsedActivity.HasBarometer instead
 	} else if r.Altitude != basetype.Uint16Invalid {
 		rec.Altitude = float64(r.Altitude)/5.0 - 500.0
 		rec.AltitudeValid = true
-		rec.AltitudeIsBarometric = false
 	}
 	if r.PositionLat != basetype.Sint32Invalid && r.PositionLong != basetype.Sint32Invalid {
 		rec.Lat = float64(r.PositionLat) * (180.0 / (1 << 31))
