@@ -1,7 +1,8 @@
 name: release
 
-# Builds standalone binaries for manual download. This workflow never publishes
-# FitAgent to a package manager; GitHub Releases are the distribution channel.
+# Builds standalone binaries and attaches them to GitHub Releases. The release
+# archives are the source for the Homebrew tap; Go users can install tagged
+# versions directly from the public module path.
 on:
   workflow_dispatch:
     inputs:
@@ -27,6 +28,7 @@ jobs:
         include:
           - { goos: linux, goarch: amd64, ext: '', archive: tar.gz }
           - { goos: linux, goarch: arm64, ext: '', archive: tar.gz }
+          - { goos: darwin, goarch: amd64, ext: '', archive: tar.gz }
           - { goos: darwin, goarch: arm64, ext: '', archive: tar.gz }
           - { goos: windows, goarch: amd64, ext: .exe, archive: zip }
     steps:

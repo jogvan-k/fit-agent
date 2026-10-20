@@ -14,6 +14,43 @@ your agent does its thinking).
 > usable; an intervals.icu API key and an OpenClaw workspace are required for
 > a live sync. See [`agent-plan.md`](./agent-plan.md) for design details.
 
+## Install
+
+### Homebrew (macOS and Linux)
+
+```sh
+brew tap jogvan-k/tap
+brew install fit-agent
+```
+
+### Go
+
+With Go 1.25 or later installed:
+
+```sh
+go install github.com/jogvan-k/fit-agent/cmd/fit-agent@latest
+```
+
+Ensure Go's binary directory is on your `PATH` (normally `$(go env GOPATH)/bin`),
+then confirm the installation:
+
+```sh
+fit-agent --version
+```
+
+### Download a binary
+
+Prebuilt macOS (Apple Silicon and Intel) and Linux (x86_64 and ARM64) archives
+are available from the [GitHub Releases page](https://github.com/jogvan-k/fit-agent/releases).
+Download the archive for your platform, verify it against `SHA256SUMS.txt`, and
+place the extracted `fit-agent` binary somewhere on your `PATH`.
+
+After installation, start the interactive setup:
+
+```sh
+fit-agent init
+```
+
 ## What it does
 
 - **Pulls everything you do** — activities, per-lap and per-interval
@@ -80,12 +117,14 @@ inside a profile to render distances in miles, elevation in feet, speed in mph,
 pace in seconds per mile, and wellness weight in pounds. The raw `.cache/`
 payloads always remain in the units supplied by intervals.icu.
 
-## Release verification
+## Releases
 
 CI runs module verification, builds, `go vet`, race-enabled tests, and linting.
-The `release-validate` workflow can be triggered manually (or by a `v*` tag)
-to build downloadable platform artifacts. It has read-only permissions and does
-not publish a package or create a GitHub release.
+Pushing a version tag such as `v0.1.0` builds downloadable archives for macOS
+(Apple Silicon and Intel), Linux (x86_64 and ARM64), and Windows x86_64,
+uploads them plus `SHA256SUMS.txt` to a GitHub Release, and makes the matching
+Go module version available through the public module path. The Homebrew tap
+formula is updated to point at the verified release archives.
 
 ## How it works with your agent
 
