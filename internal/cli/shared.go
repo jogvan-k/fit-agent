@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -41,7 +42,24 @@ func resolveRuntime(cmd *cobra.Command) (*runtime.Resolved, bool, error) {
 	dryRun, _ := root.PersistentFlags().GetBool("dry-run")
 	r, err := runtime.Resolve(cmd.Context(), runtime.Options{ProfileFlag: profile})
 	if err != nil {
-		return nil, dryRun, err
+		return nil, dryRun, &layerError{layer: "profile/config", err: err}
+	}
+	expected, _ := root.PersistentFlags().GetString("workspace")
+	if expected != "" {
+		want, err := filepath.EvalSymlinks(expected)
+		if err != nil {
+			return nil, dryRun, &layerError{layer: "workspace", err: err}
+		}
+		have, err := filepath.EvalSymlinks(r.Layout.Root)
+		if err != nil {
+			return nil, dryRun, &layerError{layer: "workspace", err: err}
+		}
+		want, _ = filepath.Abs(want)
+		have, _ = filepath.Abs(have)
+		if want != have {
+			return nil, dryRun, &layerError{layer: "workspace", err: fmt.Errorf("profile workspace mismatch")}
+		}
+		r.Layout.Root = have
 	}
 	return r, dryRun, nil
 }
@@ -60,7 +78,8 @@ func quiet(cmd *cobra.Command) bool {
 // makeLogger returns a logger function suitable for cache.Context /
 // renderorch.Context that respects --quiet and --verbose.
 func makeLogger(cmd *cobra.Command) func(string, ...any) {
-	if quiet(cmd) {
+	jsonMode, _ := cmd.Flags().GetBool("json")
+	if quiet(cmd) || jsonMode {
 		return func(string, ...any) {}
 	}
 	verbose, _ := cmd.Root().PersistentFlags().GetBool("verbose")

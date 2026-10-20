@@ -859,6 +859,40 @@ Post-v1:
 
 No LLM SDKs. The CLI is a tool the agent calls; it does not call the agent.
 
+### OpenClaw code plugin (issue #46)
+
+`plugin/` is a separate Node/TypeScript package, `@jogvan-k/fit-agent`. It wraps
+the installed CLI using literal process argument arrays. Zod is its sole runtime
+dependency (strict input/output validation and generated JSON Schemas). OpenClaw
+2026.10.5 is an exact peer and SDK test dependency; TypeScript, ESLint, tsx and the
+ClawHub package inspector are development-only tools. The existing setup skill is
+distributed independently. No LLM, Intervals API, DSL, rendering or credential
+implementation is added to TypeScript.
+
+The backwards-compatible CLI protocol-1 surface adds `integration-info`, `doctor`
+and `status` JSON commands, `fetch --json`, `sync-workouts --json`, and a global
+`--workspace` profile-binding assertion (init retains its existing local flag).
+Human sync behavior remains available; JSON sync requires explicit dates spanning
+at most 90 inclusive days and `--expect-preview` for writes. Preview does remote
+reads only and does not refresh cache before planning. This differs intentionally
+from legacy preflight: overwriting the comparison baseline would conceal conflicts.
+
+Guarded sync delegates to the existing Go planner/applier/pull renderer. It stores
+last-confirmed event snapshots in the machine-owned
+`fit-agent/.cache/sync-baseline/<id>.json`; fetch does not modify them. Missing
+baselines for remote updates are conflicts until the user reconciles intent and
+confirms an unchanged sync. Fingerprints bind version, identity, range, all planned
+markdown bytes, baseline and live inventory. The plugin adds short-lived,
+single-use, session-bound confirmation tokens and re-previews before pushing.
+All agent-owned bytes and managed-block boundaries retain the ownership rules.
+
+`plugin/README.md` documents the current actual layout: athlete profile, training
+plan, README and `.gitignore` are inside `fit-agent/`; skills and the profile
+pointer are at workspace root. Terminal setup never routes secrets through tool
+arguments or captured output. Publishing is staged: manual owner-authenticated
+first release, verified public install/security checks, then a dedicated trusted
+publisher; see `docs/plugin-release.md`.
+
 ---
 
 ## 14. Risks & mitigations

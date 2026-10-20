@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "filesCreated": {
+              "maxItems": 40,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "dryRun": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "filesCreated",
+            "dryRun"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "ok",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "layer": {
+              "type": "string",
+              "enum": [
+                "binary",
+                "workspace",
+                "profile/config",
+                "Intervals authentication",
+                "network",
+                "validation",
+                "sync conflict"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          "required": [
+            "layer",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "ok",
+        "error"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

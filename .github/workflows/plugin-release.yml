@@ -1,0 +1,51 @@
+name: plugin-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Reviewed plugin-vX.Y.Z tag (after first manual publication and trusted-publisher enrollment)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # Owner enables this only after the first public install/security checks and
+    # exact repository/workflow/environment OIDC binding are verified in ClawHub.
+    if: vars.CLAWHUB_TRUSTED_PUBLISHING == 'enabled'
+    environment: clawhub-plugin-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: plugin
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.16.0'
+          cache: npm
+          cache-dependency-path: plugin/package-lock.json
+      - name: Verify tag and package version
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: node --input-type=module -e 'import fs from "node:fs"; const p=JSON.parse(fs.readFileSync("package.json")); if(process.env.RELEASE_TAG !== `plugin-v${p.version}` || process.env.GITHUB_REF !== `refs/tags/${process.env.RELEASE_TAG}`) process.exit(1);'
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run validate
+      - run: git diff --exit-code -- schemas openclaw.plugin.json
+      - run: npm exec -- clawhub package validate . --openclaw-version 2026.10.5 --out .validation --runtime --allow-execute --no-mock-sdk
+      - name: Publish with ClawHub GitHub OIDC
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: npm exec -- clawhub package publish . --owner jogvan-k --source-repo jogvan-k/fit-agent --source-path plugin --source-ref "$RELEASE_TAG" --wait

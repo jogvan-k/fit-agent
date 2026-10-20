@@ -36,6 +36,7 @@ The CLI is invoked by an agent; it never calls an LLM itself.`,
 	}
 
 	cmd.PersistentFlags().String("profile", "", "configuration profile to use (default: from FIT_AGENT_PROFILE, workspace, or 'default')")
+	cmd.PersistentFlags().String("workspace", "", "require the selected profile to use this workspace (does not change configuration)")
 	cmd.PersistentFlags().Bool("dry-run", false, "print actions without writing or calling intervals.icu")
 	cmd.PersistentFlags().BoolP("verbose", "v", false, "verbose output")
 	cmd.PersistentFlags().BoolP("quiet", "q", false, "suppress non-error output")
@@ -43,6 +44,9 @@ The CLI is invoked by an agent; it never calls an LLM itself.`,
 	cmd.Flags().BoolVar(&showVersion, "version", false, "print version and exit")
 
 	cmd.AddCommand(newFitCmd())
+	cmd.AddCommand(newIntegrationInfoCmd())
+	cmd.AddCommand(newDoctorCmd())
+	cmd.AddCommand(newStatusCmd())
 	cmd.AddCommand(newInitCmd())
 	cmd.AddCommand(newCacheCmd())
 	cmd.AddCommand(newRenderCmd())

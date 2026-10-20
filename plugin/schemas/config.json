@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "binaryPath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+    },
+    "workspace": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+    },
+    "profile": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$"
+    },
+    "timeoutMs": {
+      "default": 120000,
+      "type": "integer",
+      "minimum": 1000,
+      "maximum": 600000
+    },
+    "diagnosticVerbosity": {
+      "default": "quiet",
+      "type": "string",
+      "enum": [
+        "quiet",
+        "normal"
+      ]
+    }
+  },
+  "additionalProperties": false
+}

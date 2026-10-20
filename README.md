@@ -16,6 +16,18 @@ your agent does its thinking).
 
 ## Install
 
+### OpenClaw code plugin
+
+The [`@jogvan-k/fit-agent` plugin](./plugin/README.md) adds typed readiness,
+interactive setup, refresh, status, preview and confirmed calendar-sync tools.
+It wraps the installed Go CLI and keeps credentials in the CLI's protected
+terminal/keyring flow. Calendar writes require a bounded, matching preview and
+explicit confirmation; stale previews and conflicting remote edits are rejected.
+
+See the [plugin guide](./plugin/README.md) for local installation, supported host
+versions, permissions and the ClawHub install command once the first owner release
+is public. Install the CLI using one of the methods below as well.
+
 ### Homebrew (macOS and Linux)
 
 ```sh

@@ -8,6 +8,30 @@ permissions:
   contents: read
 
 jobs:
+  plugin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: plugin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.16.0'
+          cache: npm
+          cache-dependency-path: plugin/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run validate
+      - name: Verify generated schemas and manifest
+        run: git diff --exit-code -- schemas openclaw.plugin.json
+      - name: ClawHub package validation
+        run: npm exec -- clawhub package validate . --openclaw-version 2026.10.5 --out .validation --runtime --allow-execute --no-mock-sdk
+      - name: ClawHub publish dry-run
+        run: npm exec -- clawhub package publish . --owner jogvan-k --source-repo jogvan-k/fit-agent --source-path plugin --dry-run
+
   test:
     runs-on: ubuntu-latest
     steps:
