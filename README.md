@@ -19,7 +19,7 @@ your agent does its thinking).
 ### Homebrew (macOS and Linux)
 
 ```sh
-brew tap jogvan-k/tap
+brew tap Harrington-bot/tap
 brew install fit-agent
 ```
 
