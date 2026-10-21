@@ -48,4 +48,4 @@ jobs:
       - name: Publish with ClawHub GitHub OIDC
         env:
           RELEASE_TAG: ${{ inputs.tag }}
-        run: npm exec -- clawhub package publish . --source-repo jogvan-k/fit-agent --source-path plugin --source-ref "$RELEASE_TAG" --wait
+        run: npm exec -- clawhub package publish . --source-repo jogvan-k/fit-agent --source-path plugin --source-ref "refs/tags/$RELEASE_TAG" --wait
