@@ -112,8 +112,14 @@ test('conflicts do not issue approval tokens; unexpected preview range/dryRun/ac
   }
 });
 
-test('workspace symlink escapes and permissive modes fail without command execution', async (t) => {
-  const f = await fixture(t); await symlink(f.root, join(f.workspace, 'fit-agent/.cache/escape'));
+test('workspace symlink escapes and unsafe writable modes fail without command execution', async (t) => {
+  const f = await fixture(t);
+  // Standard 664/775 workspace permissions are safe when the writable group is
+  // the current user's primary group.
+  await chmod(join(f.workspace, 'fit-agent/ATHLETE-PROFILE.md'), 0o664);
+  await chmod(join(f.workspace, 'fit-agent/planned-workouts'), 0o775);
+  assert((await inspectWorkspace(f.workspace)).ready);
+  await symlink(f.root, join(f.workspace, 'fit-agent/.cache/escape'));
   await assert.rejects(inspectWorkspace(f.workspace), /symlinks/);
 });
 

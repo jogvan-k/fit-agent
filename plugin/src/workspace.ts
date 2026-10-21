@@ -33,13 +33,20 @@ export async function inspectWorkspace(path: string) {
   if (!await exists(path)) return { root: path, ready: false, expected: expected.map((e) => ({ ...e, exists: false })) };
   const root = await realpath(path);
   const uid = process.getuid?.();
+  const gid = process.getgid?.();
   let inspected = 0;
   const check = async (path: string) => {
     const info = await lstat(path);
     if (++inspected > 50000) throw new Failure('workspace', 'Workspace exceeds the 50,000-entry inspection limit.');
-    if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile()) || (info.mode & 0o022) !== 0 ||
+    // A normal single-user Linux workspace often has umask-derived 664/775
+    // permissions. Permit group write only for the current primary group; world
+    // write, a foreign writable group, symlinks, special files, and foreign
+    // owners remain unsafe because another principal could alter CLI inputs.
+    const worldWritable = (info.mode & 0o002) !== 0;
+    const foreignGroupWritable = (info.mode & 0o020) !== 0 && (gid === undefined || info.gid !== gid);
+    if (info.isSymbolicLink() || (!info.isDirectory() && !info.isFile()) || worldWritable || foreignGroupWritable ||
       (uid !== undefined && info.uid !== uid && info.uid !== 0)) {
-      throw new Failure('workspace', 'FitAgent paths must be regular, locally owned files/directories without group/world write access or nested symlinks.');
+      throw new Failure('workspace', 'FitAgent paths must be regular, locally owned files/directories without world write access, foreign writable groups, or nested symlinks.');
     }
     return info;
   };
