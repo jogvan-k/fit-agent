@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "cliVersion": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "protocol": {
+              "type": "number",
+              "const": 1
+            },
+            "features": {
+              "maxItems": 20,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 64
+              }
+            }
+          },
+          "required": [
+            "cliVersion",
+            "protocol",
+            "features"
+          ],
+          "additionalProperties": false
+        },
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        }
+      },
+      "required": [
+        "ok",
+        "data",
+        "schemaVersion"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "layer": {
+              "type": "string",
+              "enum": [
+                "binary",
+                "workspace",
+                "profile/config",
+                "Intervals authentication",
+                "network",
+                "validation",
+                "sync conflict"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          "required": [
+            "layer",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        }
+      },
+      "required": [
+        "ok",
+        "error",
+        "schemaVersion"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

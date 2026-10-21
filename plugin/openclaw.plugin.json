@@ -1,0 +1,96 @@
+{
+  "id": "fit-agent",
+  "name": "FitAgent",
+  "version": "0.1.0",
+  "description": "Typed CLI-backed fitness workspace and confirmed workout-calendar synchronization",
+  "categories": [
+    "scheduling"
+  ],
+  "contracts": {
+    "tools": [
+      "fit_agent_doctor",
+      "fit_agent_init",
+      "fit_agent_refresh",
+      "fit_agent_status",
+      "fit_agent_preview_workout_sync",
+      "fit_agent_sync_workouts"
+    ]
+  },
+  "activation": {
+    "onStartup": true
+  },
+  "toolMetadata": {
+    "fit_agent_doctor": {
+      "optional": false
+    },
+    "fit_agent_init": {
+      "optional": true
+    },
+    "fit_agent_refresh": {
+      "optional": true
+    },
+    "fit_agent_status": {
+      "optional": false
+    },
+    "fit_agent_preview_workout_sync": {
+      "optional": true
+    },
+    "fit_agent_sync_workouts": {
+      "optional": true
+    }
+  },
+  "configSchema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "properties": {
+      "binaryPath": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096,
+        "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+      },
+      "workspace": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096,
+        "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+      },
+      "profile": {
+        "type": "string",
+        "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$"
+      },
+      "timeoutMs": {
+        "default": 120000,
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 600000
+      },
+      "diagnosticVerbosity": {
+        "default": "quiet",
+        "type": "string",
+        "enum": [
+          "quiet",
+          "normal"
+        ]
+      }
+    },
+    "additionalProperties": false
+  },
+  "uiHints": {
+    "binaryPath": {
+      "label": "Installed fit-agent binary (absolute path)"
+    },
+    "workspace": {
+      "label": "FitAgent workspace (defaults to active agent workspace)"
+    },
+    "profile": {
+      "label": "CLI profile (optional)"
+    },
+    "timeoutMs": {
+      "label": "Command timeout in milliseconds"
+    },
+    "diagnosticVerbosity": {
+      "label": "Diagnostic verbosity"
+    }
+  }
+}

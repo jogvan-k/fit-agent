@@ -47,6 +47,8 @@ type Context struct {
 	DryRun    bool
 	Prune     bool
 	Logger    func(format string, args ...any)
+	// Inventory overrides the cached inventory when non-nil (including empty).
+	Inventory []icu.Event
 }
 
 func (c Context) logf(format string, args ...any) {
@@ -73,6 +75,8 @@ const (
 	// ActionSkip reports an icu event that would be deleted but --prune
 	// is not set.
 	ActionSkip
+	// ActionConflict requires manual reconciliation and must never be applied.
+	ActionConflict
 )
 
 // String returns "create" / "update" / etc.
@@ -88,6 +92,8 @@ func (a ActionKind) String() string {
 		return "unchanged"
 	case ActionSkip:
 		return "skip"
+	case ActionConflict:
+		return "conflict"
 	default:
 		return fmt.Sprintf("kind(%d)", int(a))
 	}
@@ -114,9 +120,12 @@ func Plan(ctx context.Context, c Context, r daterange.Range) ([]Action, error) {
 	if err != nil {
 		return nil, err
 	}
-	cached, err := readCachedEvents(c.Layout.CacheEventsDir(), r)
-	if err != nil {
-		return nil, err
+	cached := c.Inventory
+	if cached == nil {
+		cached, err = readCachedEvents(c.Layout.CacheEventsDir(), r)
+		if err != nil {
+			return nil, err
+		}
 	}
 	// Index cached events by id and by (date, name).
 	byID := map[int64]*icu.Event{}
@@ -226,6 +235,11 @@ func Plan(ctx context.Context, c Context, r daterange.Range) ([]Action, error) {
 // back into the markdown frontmatter is done in-place.
 func Apply(ctx context.Context, c Context, actions []Action) error {
 	for _, act := range actions {
+		if act.Kind == ActionConflict {
+			return fmt.Errorf("sync conflict: reconcile local and remote workouts before pushing")
+		}
+	}
+	for i, act := range actions {
 		switch act.Kind {
 		case ActionCreate:
 			if c.DryRun {
@@ -238,6 +252,7 @@ func Apply(ctx context.Context, c Context, actions []Action) error {
 				return fmt.Errorf("create %s/%s: %w", act.Date, act.Name, err)
 			}
 			c.logf("created %s %s -> id=%d", act.Date, act.Name, created.ID)
+			actions[i].Event = *created
 			if act.SourcePath != "" {
 				if err := stampIDInFile(act.SourcePath, act.Name, created.ID); err != nil {
 					return fmt.Errorf("stamp id into %s: %w", act.SourcePath, err)
@@ -250,9 +265,11 @@ func Apply(ctx context.Context, c Context, actions []Action) error {
 					indentBlock(act.Event.Description, "    "))
 				continue
 			}
-			if _, err := c.Client.UpdateEvent(ctx, c.AthleteID, act.Event); err != nil {
+			updated, err := c.Client.UpdateEvent(ctx, c.AthleteID, act.Event)
+			if err != nil {
 				return fmt.Errorf("update %s/%s (id=%d): %w", act.Date, act.Name, act.Event.ID, err)
 			}
+			actions[i].Event = *updated
 			c.logf("updated %s %s (id=%d)", act.Date, act.Name, act.Event.ID)
 		case ActionDelete:
 			if c.DryRun {
@@ -475,7 +492,7 @@ func stampIDInFile(path, name string, id int64) error {
 	if out == string(buf) {
 		return nil
 	}
-	return os.WriteFile(path, []byte(out), 0o644)
+	return workspace.AtomicWrite(path, []byte(out), 0o644)
 }
 
 // indentBlock prefixes every line after the first with the given indent.

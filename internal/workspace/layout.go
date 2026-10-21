@@ -128,6 +128,12 @@ func (l Layout) CacheEventPath(icuID string) string {
 	return filepath.Join(l.CacheEventsDir(), icuID+".json")
 }
 
+// SyncBaselinePath stores the last explicitly synchronized event snapshot.
+// Fetch never refreshes it, so remote edits remain conflicts after a fetch.
+func (l Layout) SyncBaselinePath(icuID string) string {
+	return l.Path("fit-agent", ".cache", "sync-baseline", icuID+".json")
+}
+
 // MachineDirs are the machine-owned directories that fetch may create.
 func (l Layout) MachineDirs() []string {
 	return []string{

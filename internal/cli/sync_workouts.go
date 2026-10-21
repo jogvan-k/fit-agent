@@ -10,8 +10,10 @@ import (
 
 func newSyncWorkoutsCmd() *cobra.Command {
 	var (
-		rf    rangeFlags
-		prune bool
+		rf       rangeFlags
+		prune    bool
+		jsonMode bool
+		expected string
 	)
 	cmd := &cobra.Command{
 		Use:   "sync-workouts",
@@ -43,13 +45,25 @@ Pass --prune to also DELETE icu events that no longer have a matching
 locally-authored markdown file (otherwise such events are reported as
 'skip' during the push step).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if jsonMode && (rf.From == "" || rf.To == "" || rf.Since != "") {
+				return machineResult(cmd, nil, fmt.Errorf("bounded --from and --to required"))
+			}
 			res, dryRun, err := resolveRuntime(cmd)
 			if err != nil {
+				if jsonMode {
+					return machineResult(cmd, nil, err)
+				}
 				return err
 			}
 			r, err := rf.parse(res.Location)
 			if err != nil {
+				if jsonMode {
+					return machineResult(cmd, nil, err)
+				}
 				return err
+			}
+			if jsonMode && (r.Oldest > r.Newest || r.NewestT.Sub(r.OldestT).Hours() > 90*24) {
+				return machineResult(cmd, nil, fmt.Errorf("range must be at most 90 days"))
 			}
 			sctx := syncorch.Context{
 				Client:    res.Client,
@@ -60,6 +74,13 @@ locally-authored markdown file (otherwise such events are reported as
 				Prune:     prune,
 				Logger:    makeLogger(cmd),
 			}
+			if jsonMode {
+				result, err := syncorch.GuardedSync(ctxOrBackground(cmd), sctx, r, Version+"/"+res.ProfileName, expected)
+				return machineResult(cmd, result, err)
+			}
+			if expected != "" {
+				return fmt.Errorf("--expect-preview requires --json")
+			}
 			result, err := syncorch.Sync(ctxOrBackground(cmd), sctx, r)
 			out := stdoutOrStderrForResults(cmd)
 			fmt.Fprintf(out, "sync-workouts: %s\n", result)
@@ -68,5 +89,7 @@ locally-authored markdown file (otherwise such events are reported as
 	}
 	rf.bind(cmd)
 	cmd.Flags().BoolVar(&prune, "prune", false, "DELETE icu events that no longer appear in markdown")
+	cmd.Flags().BoolVar(&jsonMode, "json", false, "versioned guarded sync result; requires bounded dates and confirmed preview for writes")
+	cmd.Flags().StringVar(&expected, "expect-preview", "", "fingerprint from a matching --json --dry-run (required for JSON writes)")
 	return cmd
 }

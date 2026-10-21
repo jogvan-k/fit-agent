@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "workspace": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+            },
+            "profile": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+            },
+            "timezone": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+            },
+            "credentialsReady": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "required": [
+            "workspace",
+            "profile",
+            "timezone",
+            "credentialsReady"
+          ],
+          "additionalProperties": false
+        },
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        }
+      },
+      "required": [
+        "ok",
+        "data",
+        "schemaVersion"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "layer": {
+              "type": "string",
+              "enum": [
+                "binary",
+                "workspace",
+                "profile/config",
+                "Intervals authentication",
+                "network",
+                "validation",
+                "sync conflict"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          "required": [
+            "layer",
+            "message"
+          ],
+          "additionalProperties": false
+        },
+        "schemaVersion": {
+          "type": "number",
+          "const": 1
+        }
+      },
+      "required": [
+        "ok",
+        "error",
+        "schemaVersion"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

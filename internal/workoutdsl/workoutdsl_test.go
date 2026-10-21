@@ -229,6 +229,7 @@ func TestParseRepeatWithInnerNote(t *testing.T) {
 	r := w.Steps[0].Repeat
 	if r == nil {
 		t.Fatalf("expected repeat, got %+v", w.Steps[0])
+		return
 	}
 	if r.Steps[0].Note != "hold steady" {
 		t.Errorf("work note=%q", r.Steps[0].Note)
@@ -440,6 +441,7 @@ func TestParsePace(t *testing.T) {
 			p := w.Steps[0].Simple.Intensity.Pace
 			if p == nil {
 				t.Fatalf("expected Pace intensity, got %+v", w.Steps[0].Simple.Intensity)
+				return
 			}
 			if p.Raw != tc.wantRaw {
 				t.Errorf("Raw=%q want %q", p.Raw, tc.wantRaw)
@@ -519,6 +521,7 @@ func TestPaceInRepeat(t *testing.T) {
 	r := w.Steps[0].Repeat
 	if r == nil {
 		t.Fatalf("expected repeat")
+		return
 	}
 	if r.Steps[0].Intensity.Pace == nil || r.Steps[0].Intensity.Pace.Raw != "3:55/km" {
 		t.Errorf("work pace=%+v", r.Steps[0].Intensity)
@@ -745,6 +748,7 @@ func TestPaceZoneKmAmount(t *testing.T) {
 	step := w.Steps[0].Simple
 	if step == nil {
 		t.Fatalf("expected simple step")
+		return
 	}
 	if step.Intensity.PaceZone == nil {
 		t.Fatalf("expected PaceZone intensity, got %+v", step.Intensity)

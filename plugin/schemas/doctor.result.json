@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": true
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "binaryPath": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+            },
+            "cliVersion": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "workspace": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+            },
+            "ready": {
+              "type": "boolean"
+            },
+            "profile": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096,
+              "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+            },
+            "expected": {
+              "maxItems": 40,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "owner": {
+                    "type": "string",
+                    "enum": [
+                      "agent",
+                      "machine",
+                      "shared"
+                    ]
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "file",
+                      "directory"
+                    ]
+                  },
+                  "exists": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "path",
+                  "owner",
+                  "type",
+                  "exists"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "nextAction": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          "required": [
+            "binaryPath",
+            "cliVersion",
+            "workspace",
+            "ready",
+            "profile",
+            "expected",
+            "nextAction"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "ok",
+        "data"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "const": false
+        },
+        "error": {
+          "type": "object",
+          "properties": {
+            "layer": {
+              "type": "string",
+              "enum": [
+                "binary",
+                "workspace",
+                "profile/config",
+                "Intervals authentication",
+                "network",
+                "validation",
+                "sync conflict"
+              ]
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 512
+            }
+          },
+          "required": [
+            "layer",
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "ok",
+        "error"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}
