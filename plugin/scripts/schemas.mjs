@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { z } from 'zod';
 import { configSchema, inputs, outputs, cliEnvelope, cliSyncSchema, cliDoctorSchema, cliFetchSchema, infoSchema, statusData } from '../dist/schemas.js';
 
@@ -12,8 +12,9 @@ for (const tool of Object.keys(inputs)) {
 for (const [name, schema] of Object.entries({ sync: cliSyncSchema, doctor: cliDoctorSchema, fetch: cliFetchSchema, info: infoSchema, status: statusData })) {
   await emit(`cli-${name}.result`, cliEnvelope(schema));
 }
+const pkg = JSON.parse(await readFile('package.json', 'utf8'));
 const manifest = {
-  id: 'fit-agent', name: 'FitAgent', version: '0.1.0',
+  id: 'fit-agent', name: 'FitAgent', version: pkg.version,
   description: 'Typed CLI-backed fitness workspace and confirmed workout-calendar synchronization',
   categories: ['scheduling'],
   contracts: { tools: Object.keys(inputs).map((tool) => `fit_agent_${tool}`) },
