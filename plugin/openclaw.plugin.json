@@ -1,7 +1,7 @@
 {
   "id": "fit-agent",
   "name": "FitAgent",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Typed CLI-backed fitness workspace and confirmed workout-calendar synchronization",
   "categories": [
     "scheduling"

@@ -1,6 +1,6 @@
 {
   "name": "@jogvan-k/fit-agent",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Safe typed FitAgent CLI tools for OpenClaw fitness workspaces and workout calendars",
   "type": "module",
   "license": "MIT",
