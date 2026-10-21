@@ -1,15 +1,35 @@
 {
   "name": "@jogvan-k/fit-agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Safe typed FitAgent CLI tools for OpenClaw fitness workspaces and workout calendars",
   "type": "module",
   "license": "MIT",
   "author": "jogvan-k",
-  "repository": { "type": "git", "url": "https://github.com/jogvan-k/fit-agent.git", "directory": "plugin" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jogvan-k/fit-agent.git",
+    "directory": "plugin"
+  },
   "homepage": "https://github.com/jogvan-k/fit-agent/tree/main/plugin",
-  "keywords": ["openclaw", "fit-agent", "intervals-icu", "fitness", "workout", "calendar"],
-  "engines": { "node": ">=24.16.0 <25 || >=26.1.0" },
-  "files": ["dist", "schemas", "openclaw.plugin.json", "README.md", "LICENSE", "assets"],
+  "keywords": [
+    "openclaw",
+    "fit-agent",
+    "intervals-icu",
+    "fitness",
+    "workout",
+    "calendar"
+  ],
+  "engines": {
+    "node": ">=24.16.0 <25 || >=26.1.0"
+  },
+  "files": [
+    "dist",
+    "schemas",
+    "openclaw.plugin.json",
+    "README.md",
+    "LICENSE",
+    "assets"
+  ],
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -20,8 +40,12 @@
     "validate": "npm run build && node scripts/validate.mjs",
     "prepack": "npm run build"
   },
-  "dependencies": { "zod": "4.3.6" },
-  "peerDependencies": { "openclaw": "2026.10.5" },
+  "dependencies": {
+    "zod": "4.3.6"
+  },
+  "peerDependencies": {
+    "openclaw": "2026.10.5"
+  },
   "devDependencies": {
     "@eslint/js": "9.39.4",
     "@types/node": "24.12.0",
@@ -33,8 +57,16 @@
     "clawhub": "0.23.3"
   },
   "openclaw": {
-    "extensions": ["./dist/index.js"],
-    "compat": { "pluginApi": "2026.10.5", "minGatewayVersion": "2026.10.5" },
-    "build": { "openclawVersion": "2026.10.5", "pluginSdkVersion": "2026.10.5" }
+    "extensions": [
+      "./dist/index.js"
+    ],
+    "compat": {
+      "pluginApi": "2026.10.5",
+      "minGatewayVersion": "2026.10.5"
+    },
+    "build": {
+      "openclawVersion": "2026.10.5",
+      "pluginSdkVersion": "2026.10.5"
+    }
   }
 }
