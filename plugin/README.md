@@ -1,290 +1,149 @@
 # FitAgent for OpenClaw
 
-`@jogvan-k/fit-agent` exposes six typed tools backed by your locally installed
-`fit-agent` Go CLI. Runtime plugin ID: **`fit-agent`**. Catalog category:
-**Scheduling**. Source: [jogvan-k/fit-agent](https://github.com/jogvan-k/fit-agent),
-package directory `plugin/`. The CLI owns all Intervals.icu requests, credentials,
-workout parsing, rendering, and workspace writes.
+FitAgent turns your [Intervals.icu](https://intervals.icu) training data into a
+local workspace that an OpenClaw agent can use to help with training plans,
+daily workout decisions, and structured workouts.
 
-## Requirements and installation
+This plugin adds safe, typed FitAgent tools to OpenClaw. It is designed to keep
+you in control: it can inspect and refresh your data freely, but any calendar
+change is previewed first and requires confirmation before it is pushed.
 
-- macOS or Linux, Intel/AMD64 or ARM64. Windows is not supported by plugin v1
-  because protected setup uses a local controlling terminal (`/dev/tty`).
-- Node **24.16+ within Node 24**, or **26.1+**.
-- OpenClaw **2026.10.5**, including plugin API **2026.10.5**. This exact host
-  version is the minimum and the tested compatibility target. Other releases
-  need a compatibility test before widening the peer/API range.
-- Stable `fit-agent >=0.1.0` **and integration protocol 1**. Version alone is
-  insufficient: `integration-info --json` must advertise `doctor-json`,
-  `status-json`, `fetch-json`, `workspace-assertion`, and `guarded-sync-v1`.
-  Older released CLIs can fail this gate even when their version is >=0.1.0.
+## What you can do
 
-Install the CLI yourself on the **Gateway host**:
+After setup, ask your agent things like:
+
+- “Is my training workspace ready?”
+- “Refresh my recent Intervals.icu data.”
+- “How has my training load and recovery looked this week?”
+- “Build a plan for my next race.”
+- “Create next week’s workouts and show me what will change.”
+- “Move Friday’s session to Saturday.”
+
+The plugin provides six tools behind those requests:
+
+| Tool | What it does |
+| --- | --- |
+| `fit_agent_doctor` | Checks the CLI, workspace, profile, and local setup. |
+| `fit_agent_init` | Starts FitAgent’s secure interactive setup. |
+| `fit_agent_refresh` | Pulls recent Intervals.icu data into the workspace. |
+| `fit_agent_status` | Shows data freshness and upcoming workout state. |
+| `fit_agent_preview_workout_sync` | Shows planned calendar changes without pushing them. |
+| `fit_agent_sync_workouts` | Pushes a previously previewed, confirmed calendar change. |
+
+## Before you install
+
+You need:
+
+- an OpenClaw Gateway running **2026.10.5 or newer**;
+- an [Intervals.icu](https://intervals.icu) account; and
+- the FitAgent command-line tool installed on the same machine as the Gateway.
+
+Install the CLI with Homebrew:
 
 ```sh
 brew tap jogvan-k/tap
 brew install fit-agent
+```
+
+Or with Go 1.25 or newer:
+
+```sh
+go install github.com/jogvan-k/fit-agent/cmd/fit-agent@latest
+```
+
+Check that it is available:
+
+```sh
 fit-agent --version
-fit-agent integration-info --json
 ```
 
-If the release does not yet include protocol 1, build this repository revision
-with Go 1.25+ (the explicit version stamp permits development compatibility testing):
+## Install the plugin
 
 ```sh
-go build -ldflags '-X github.com/jogvan-k/fit-agent/internal/cli.Version=0.1.0' -o bin/fit-agent ./cmd/fit-agent
+openclaw plugins install 'clawhub:@jogvan-k/fit-agent@0.1.4' --accept-capabilities
 ```
 
-Configure `binaryPath` to the absolute path of that binary. The plugin never
-downloads or silently installs a CLI.
+Then ask your agent to run a FitAgent doctor check. If you have not created a
+FitAgent workspace yet, ask it to set one up.
 
-Once the manually authenticated first ClawHub publication is available:
+## First-time setup
+
+FitAgent stores data in your OpenClaw workspace. During setup it creates a
+`fit-agent/` directory containing your athlete profile, training plan, recent
+activities, wellness data, and planned workouts.
+
+The first setup uses an **interactive terminal prompt** for your Intervals.icu
+API key. The key is not entered into chat, plugin configuration, or a Markdown
+file.
+
+If your Gateway is headless, run this in a private terminal on the Gateway host:
 
 ```sh
-openclaw plugins install @jogvan-k/fit-agent
-openclaw plugins enable fit-agent
-openclaw plugins inspect fit-agent --runtime --json
+fit-agent init
 ```
 
-Before that publication, install from a checkout:
+Then ask the agent to refresh data:
 
 ```sh
-cd plugin
-npm ci
-npm run build
-openclaw plugins install --link .
+fit-agent fetch --since 90d
 ```
 
-ClawHub publication and public install verification are release-operator steps;
-source validation or a publish dry-run does not establish a public listing.
-The existing standalone `fit-agent-setup` skill remains a discoverable onboarding
-companion, separately published and not bundled as plugin runtime logic.
+You can also install the separate **FitAgent Setup** skill from ClawHub for a
+guided onboarding flow.
 
-## Configuration and permissions
+## How calendar changes stay safe
 
-Merge this example into your OpenClaw configuration, using your own absolute path:
+The plugin does not silently push workouts.
 
-```json
-{
-  "plugins": {
-    "allow": ["fit-agent"],
-    "entries": {
-      "fit-agent": {
-        "enabled": true,
-        "config": {
-          "workspace": "/home/you/.openclaw/workspace",
-          "timeoutMs": 120000,
-          "diagnosticVerbosity": "quiet"
-        }
-      }
-    }
-  },
-  "tools": { "allow": ["fit-agent"] }
-}
-```
+1. Your agent first runs a **preview** for an explicit date range.
+2. You review the proposed creates and changes.
+3. The agent asks for confirmation.
+4. The plugin pushes only that exact previewed range.
 
-Preserve existing allowlist entries. `doctor` and `status` are required tools;
-the four side-effect/network tools are optional and require tool-policy opt-in.
-Plugin tools are unavailable in sandboxed sessions: they do not escape a sandbox
-to execute on the Gateway host. Use a trusted local, unsandboxed agent session.
+The confirmation expires after ten minutes and cannot be reused. If planned
+workouts, the selected profile, or the remote calendar changes in between, the
+plugin refuses to push and asks for a fresh preview.
 
-| Config | Default | Validation |
-|---|---|---|
-| `binaryPath` | executable `fit-agent` on PATH | Absolute override; resolves symlinks; executable regular file |
-| `workspace` | active agent workspace | Absolute path (`~/` accepted); resolves root symlinks |
-| `profile` | CLI selection: environment → workspace pointer → `default` | 1–64 letters/digits/underscore/dot/hyphen; starts alphanumeric |
-| `timeoutMs` | 120000 | Integer 1000–600000, per subprocess |
-| `diagnosticVerbosity` | `quiet` | `normal` logs tool name and success/error layer only; never CLI verbose/private output |
+For safety, the plugin currently creates new workouts and confirms unchanged
+ones. It intentionally refuses plugin-driven edits or deletions of existing
+remote events because Intervals.icu does not yet provide an event-version check
+that would prevent an intervening remote edit from being overwritten.
 
-The selected CLI profile must point to the exact canonical workspace. The new
-global CLI `--workspace` flag asserts this binding instead of redirecting writes.
-Workspace inspection is metadata-only, checks the actual current Go layout, and
-rejects nested symlinks, special files, unsafe write permissions, and unexpected
-owners. It creates nothing. Root symlinks are supported for diagnostic accuracy.
-Inspection is bounded at 50,000 entries; planned markdown is limited to 8 MiB;
-each sync is limited to 500 actions.
+## Privacy and data ownership
 
-The host user needs executable access to the CLI, read/write access to their
-workspace, access to the OS keyring/config, and HTTPS access to Intervals.icu
-through the CLI. No API key belongs in plugin config or a tool call.
+- Your Intervals.icu API key stays in FitAgent’s protected local setup.
+- Raw activities, wellness data, and caches remain local to your workspace.
+- The plugin returns compact summaries, not raw training history.
+- FitAgent never calls an LLM itself; OpenClaw agents call the local CLI.
+- The plugin is a coaching aid, not medical advice. Seek qualified care for
+  injuries, acute symptoms, or health concerns.
 
-## Tools and onboarding
+## Troubleshooting
 
-1. Ask **“Is FitAgent ready?”** → `fit_agent_doctor {}`. It checks the binary,
-   feature gate, workspace shape and local credential availability without a
-   network request. Missing binary diagnostics include the Homebrew commands.
-2. `fit_agent_init {}` runs the CLI’s existing protected interactive form on
-   the host’s controlling terminal. It returns only created scaffold paths on
-   success. All terminal I/O bypasses the agent. In a headless Gateway, follow
-   the returned argument vector in a private terminal on the host:
-   `fit-agent init --workspace /your/workspace` (optionally `--profile-name NAME`).
-   Then run doctor again. Never paste keys in chat. `{ "dryRun": true }` uses
-   the CLI’s interactive dry-run and creates no files.
-3. `fit_agent_refresh {}` runs `fetch --since 90d --json`. Override with e.g.
-   `{ "since": "30d" }`; accepted history is 1–366 days. It returns counts, not
-   raw fitness payloads. It performs remote reads and machine-owned local writes.
-4. `fit_agent_status {}` returns activity/wellness recency, data file modification
-   time, authored workout count, up to 30 upcoming dates (athlete-local calendar),
-   and athlete-profile/training-plan presence. It performs local reads only and
-   makes no coaching recommendations. A usable CLI profile is required.
-5. Preview an explicitly bounded range:
+**“FitAgent is not ready”**
+: Check the CLI with `fit-agent --version`, then run `fit-agent init` in the
+  workspace you want to use.
 
-   ```json
-   { "from": "2026-11-01", "to": "2026-11-07" }
-   ```
+**“Workspace is incomplete”**
+: Run the doctor tool first. It will identify missing setup files without
+  changing anything.
 
-   `fit_agent_preview_workout_sync` calls
-   `sync-workouts --from ... --to ... --dry-run --json`. Ranges contain 1–90
-   inclusive calendar dates, from years 2000–2099. It reports action kind, date,
-   event ID, all six action counts (create/update/delete/unchanged/skip/conflict),
-   a deterministic fingerprint and a single-use confirmation token. Names,
-   descriptions and raw cache data are omitted. Inspect the local planned files
-   when more detail is needed. The plugin does not enable `--prune`; remote-only
-   events are skips, and delete counts are normally zero.
-6. **Present that exact preview to the user.** Only after explicit confirmation
-   (or an existing explicit standing preference to push after successful preview)
-   call `fit_agent_sync_workouts`:
+**“Confirmation is stale”**
+: Preview the date range again and confirm the new preview.
 
-   ```json
-   {
-     "from": "2026-11-01",
-     "to": "2026-11-07",
-     "confirmed": true,
-     "confirmationToken": "<64-character token from the matching preview>"
-   }
-   ```
+**“Sync conflict”**
+: Review the workout in Intervals.icu and the local planned-workout file, resolve
+  the intended version deliberately, then preview again.
 
-   This is the only plugin tool that writes the remote calendar. It also updates
-   local machine-managed files and stamps returned IDs through the Go CLI.
+## Advanced configuration
 
-## Confirmation and conflicts
+Most users do not need configuration. If your FitAgent binary or workspace is
+outside the normal Gateway environment, configure the plugin with an absolute
+`binaryPath`, `workspace`, or FitAgent `profile` in OpenClaw’s plugin settings.
 
-Tokens expire after **10 minutes**, are consumed even when a sync attempt fails,
-and are bound to the agent/session incarnation/requester, binary path, workspace,
-profile and exact dates. Tokens are memory-only; reload/restart invalidates them.
-There is no plugin option to disable confirmation. A boolean alone is insufficient.
-The calling agent is responsible for obtaining human confirmation: a token proves
-a matching preview occurred, not that a human read it.
+For development, release operations, complete configuration schemas, and the
+trusted-publishing workflow, see the repository:
 
-Before pushing, the plugin re-previews and compares fingerprints. The CLI receives
-`--expect-preview` and independently verifies the same plan immediately before
-applying it. The CLI digest includes CLI version, profile/athlete/workspace,
-range/prune policy, **all planned markdown bytes** (including drafts and managed
-blocks), durable sync baselines, live inventory, and planned actions. The plugin
-adds its own identity/range binding. Any changed input invalidates approval.
-All markdown is hashed because the Go planner selects by frontmatter date, not
-filename; editing an unrelated draft can therefore require a fresh preview.
-
-The guarded CLI writes last-confirmed snapshots under
-`fit-agent/.cache/sync-baseline/<event-id>.json`. `fetch` does not modify these.
-A changed or deleted remote workout, missing baseline for an update, duplicate
-identity, malformed CLI JSON, unknown action, or mismatched schema fails closed.
-Intervals.icu currently does not expose an event revision/ETag precondition, so
-this guarded protocol also fails closed for every update or delete of an existing
-remote event; it can only create a new event or confirm an unchanged one. Use the
-Intervals.icu UI or the legacy CLI deliberately to reconcile an existing event,
-then preview again. No confirmation token is issued for a conflict preview.
-
-For an existing calendar without confirmed baselines, reconcile the agent-owned
-workout intent with the remote workout yourself. Once the preview reports
-`unchanged`, explicitly confirm that sync to establish its baseline. Existing-event
-changes remain conflicts in the guarded protocol until Intervals.icu provides a
-conditional-write API. Resolve those changes deliberately in the calendar or
-legacy CLI, then reconcile and establish a fresh unchanged baseline. The plugin
-never edits `fit-agent:icu` blocks or automatically resolves a conflict.
-
-Remote HTTP APIs cannot atomically lock a whole calendar against edits made after
-the final inventory read. Run one calendar writer at a time. The plugin serializes
-its operations per workspace. Concurrent external editors/CLI processes are not
-covered by that in-process lock. Failed or cancelled writes can be partial: check
-the calendar and obtain a fresh preview before retrying.
-
-## Privacy, diagnostics, and troubleshooting
-
-- Processes use executable paths and literal argument arrays, **never a shell**.
-- Credential input uses only the CLI terminal prompt. The plugin never reads the
-  keyring/config contents. Child environments are allowlisted and omit
-  `FIT_AGENT_API_KEY`, model-provider keys, `NODE_OPTIONS`, and `ICU_BASE_URL`.
-- stdout/stderr capture is capped at 256 KiB combined. Stderr is redacted and
-  retained only in in-memory failure diagnostics; agents receive fixed safe
-  messages and allowlisted error layers. Unexpected JSON is never returned.
-- Tool results are capped at 64 KiB and bounded by schemas (500 sync actions, 30 upcoming dates).
-  No raw activity, wellness or cache contents are returned, and nothing is logged
-  to an external service by this package.
-- Timeouts/cancellation terminate the CLI process group. After a failed write,
-  inspect the local CLI/calendar before retrying.
-
-| Error layer | Next action |
-|---|---|
-| `binary` | Install/upgrade the CLI; check absolute path, executable bit, version and protocol gate |
-| `workspace` | Run doctor; correct profile binding, missing scaffold, file type or ownership/permissions |
-| `profile/config` | Run interactive `fit-agent init` in a private terminal |
-| `Intervals authentication` | Reconfigure the CLI’s credentials interactively |
-| `network` | Check connectivity/rate limiting; inspect state before retrying writes |
-| `validation` | Check input/schema versions; run the CLI locally for private details |
-| `sync conflict` | Reconcile manually and present a new preview for confirmation |
-
-The CLI can safely fall back to a mode-0600 config file when the OS keyring is
-unavailable; that existing CLI warning appears in the private setup terminal.
-Doctor verifies local credential availability, not whether the server accepts it.
-
-## Development and validation
-
-```sh
-cd plugin
-npm ci
-npm run test
-npm run typecheck
-npm run lint
-npm run validate
-npm exec -- clawhub package validate . --openclaw-version 2026.10.5 --out .validation --runtime --allow-execute --no-mock-sdk
-npm exec -- clawhub package publish . --owner jogvan-k --source-repo jogvan-k/fit-agent --source-path plugin --dry-run
-npm pack --dry-run
-```
-
-Use the pinned local ClawHub CLI; older skills-only releases do not implement
-`package validate` or `package publish`. Fake-executable tests exercise each tool,
-the full onboarding flow on a PTY, failures, redaction, invalid output, version
-gating, cancellation, argv, fingerprints and stale/replayed confirmation. Python 3
-is a test-only requirement for PTY fixtures. Go tests use `httptest.Server` and
-verify guarded creates, fail-closed existing-event mutations, conflict rejection and cache ownership.
-
-Runtime inspection uses `--no-mock-sdk` to load the real pinned SDK and Zod.
-The inspector's default dependency mocks do not implement Zod's ISO date API.
-
-Input/result schemas and the manifest are generated from `src/schemas.ts` by
-`npm run build`; semantic calendar/range refinements are enforced at runtime in
-addition to JSON Schema validation. Commit regenerated schemas with source changes.
-
-## Rollback and uninstall
-
-Disable immediately:
-
-```sh
-openclaw plugins disable fit-agent
-```
-
-Remove the plugin:
-
-```sh
-openclaw plugins uninstall fit-agent
-```
-
-Remove any manually added `plugins.load.paths` entry and tool allowlist entries.
-For rollback, install a previously reviewed **published** exact package version:
-`openclaw plugins install @jogvan-k/fit-agent@VERSION` and re-enable it. All pending
-confirmation tokens are lost on plugin replacement. Workspace data, the installed
-Go CLI, credentials and already-pushed remote events are retained. Uninstalling
-does not undo calendar mutations; manage those deliberately with the calendar/CLI.
-
-To remove the separately installed CLI: `brew uninstall fit-agent`. See the
-repository release documentation before deleting a workspace or CLI profile.
-No uninstall step should expose or print stored credentials.
-
-## Release ownership
-
-The first publication is **manually authenticated** by the `jogvan-k` owner.
-See [`docs/plugin-release.md`](https://github.com/jogvan-k/fit-agent/blob/main/docs/plugin-release.md)
-for validation, security-check/public-install verification, and the subsequent
-GitHub Actions trusted-publishing setup. No registry credential belongs in this
-repository or plugin config.
+- [FitAgent source and documentation](https://github.com/jogvan-k/fit-agent)
+- [Plugin protocol](https://github.com/jogvan-k/fit-agent/blob/main/docs/plugin-protocol.md)
+- [Plugin release guide](https://github.com/jogvan-k/fit-agent/blob/main/docs/plugin-release.md)
