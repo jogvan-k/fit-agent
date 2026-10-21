@@ -136,6 +136,20 @@ func GuardedSync(ctx context.Context, c Context, r daterange.Range, identity, ex
 			baseline[a.Event.ID] = data
 		}
 	}
+	// Intervals.icu's event endpoints currently offer no revision/ETag
+	// precondition that can bind a PUT or DELETE to the inventory inspected
+	// above. A remote edit made after ListEvents and before an unconditional
+	// mutation would otherwise be silently overwritten. The machine protocol is
+	// deliberately stricter than the legacy human CLI: it can create new events,
+	// but fails closed for changes to existing remote events until the upstream
+	// API exposes a conditional-write primitive.
+	for i := range actions {
+		a := &actions[i]
+		if a.Kind == pushorch.ActionUpdate || a.Kind == pushorch.ActionDelete {
+			a.Kind = pushorch.ActionConflict
+			conflict = true
+		}
+	}
 	// A stamped event deleted or moved remotely is also a conflict. The legacy
 	// planner proposes create in this case; only an unstamped workout is new.
 	for i := range actions {

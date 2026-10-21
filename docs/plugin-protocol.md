@@ -53,7 +53,11 @@ renderer with a live in-memory inventory. It hashes CLI/profile/athlete/workspac
 identity, dates, prune policy, all planned markdown bytes, confirmed baselines,
 live events and planned actions. A stale hash or conflict causes rejection before
 any writes. The plugin additionally requires a recent single-use session token,
-user confirmation and another successful matching preview.
+user confirmation and another successful matching preview. Intervals.icu does not
+currently expose a revision/ETag conditional write for an event, so guarded JSON
+sync fails closed for updates and deletes of existing remote events rather than
+risk overwriting an edit made after the inventory read; guarded creates remain
+supported.
 
 ## Ownership and conflict baselines
 

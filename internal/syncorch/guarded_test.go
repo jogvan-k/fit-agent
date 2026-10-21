@@ -137,21 +137,24 @@ func TestGuardedCreateUpdateDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 	p = f.preview(t)
-	if p.Actions[0].Kind != "update" {
-		t.Fatalf("expected update: %+v", p)
+	if p.Actions[0].Kind != "conflict" {
+		t.Fatalf("guarded update must fail closed without a remote revision precondition: %+v", p)
 	}
-	f.apply(t, p.Fingerprint)
+	f.c.DryRun = false
+	if _, err := GuardedSync(context.Background(), f.c, f.r, "0.1.0/default", p.Fingerprint); !errors.Is(err, ErrConflict) {
+		t.Fatalf("guarded update got %v, want conflict", err)
+	}
 	if err := os.Remove(f.path); err != nil {
 		t.Fatal(err)
 	}
 	f.c.Prune = true
+	f.c.DryRun = true
 	p = f.preview(t)
-	if p.Actions[0].Kind != "delete" {
-		t.Fatalf("expected delete: %+v", p)
+	if p.Actions[0].Kind != "conflict" {
+		t.Fatalf("guarded delete must fail closed without a remote revision precondition: %+v", p)
 	}
-	f.apply(t, p.Fingerprint)
-	if f.writes != 3 {
-		t.Fatalf("got %d writes", f.writes)
+	if f.writes != 1 {
+		t.Fatalf("guarded protocol made %d writes, want only initial create", f.writes)
 	}
 }
 

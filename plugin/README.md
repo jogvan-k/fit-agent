@@ -179,15 +179,19 @@ The guarded CLI writes last-confirmed snapshots under
 `fit-agent/.cache/sync-baseline/<event-id>.json`. `fetch` does not modify these.
 A changed or deleted remote workout, missing baseline for an update, duplicate
 identity, malformed CLI JSON, unknown action, or mismatched schema fails closed.
-No confirmation token is issued for a conflict preview.
+Intervals.icu currently does not expose an event revision/ETag precondition, so
+this guarded protocol also fails closed for every update or delete of an existing
+remote event; it can only create a new event or confirm an unchanged one. Use the
+Intervals.icu UI or the legacy CLI deliberately to reconcile an existing event,
+then preview again. No confirmation token is issued for a conflict preview.
 
 For an existing calendar without confirmed baselines, reconcile the agent-owned
 workout intent with the remote workout yourself. Once the preview reports
-`unchanged`, explicitly confirm that sync to establish its baseline. Subsequent
-local edits can be previewed as updates. To retain local intent over conflicting
-remote changes, resolve that decision using the CLI/calendar directly, then
-reconcile and establish a fresh unchanged baseline. The plugin never edits
-`fit-agent:icu` blocks or automatically resolves a conflict.
+`unchanged`, explicitly confirm that sync to establish its baseline. Existing-event
+changes remain conflicts in the guarded protocol until Intervals.icu provides a
+conditional-write API. Resolve those changes deliberately in the calendar or
+legacy CLI, then reconcile and establish a fresh unchanged baseline. The plugin
+never edits `fit-agent:icu` blocks or automatically resolves a conflict.
 
 Remote HTTP APIs cannot atomically lock a whole calendar against edits made after
 the final inventory read. Run one calendar writer at a time. The plugin serializes
@@ -243,7 +247,7 @@ Use the pinned local ClawHub CLI; older skills-only releases do not implement
 the full onboarding flow on a PTY, failures, redaction, invalid output, version
 gating, cancellation, argv, fingerprints and stale/replayed confirmation. Python 3
 is a test-only requirement for PTY fixtures. Go tests use `httptest.Server` and
-verify actual guarded create/update/delete, conflict rejection and cache ownership.
+verify guarded creates, fail-closed existing-event mutations, conflict rejection and cache ownership.
 
 Runtime inspection uses `--no-mock-sdk` to load the real pinned SDK and Zod.
 The inspector's default dependency mocks do not implement Zod's ISO date API.
