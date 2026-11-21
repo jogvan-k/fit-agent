@@ -11,9 +11,8 @@ workout parsing, rendering, and workspace writes.
 - macOS or Linux, Intel/AMD64 or ARM64. Windows is not supported by plugin v1
   because protected setup uses a local controlling terminal (`/dev/tty`).
 - Node **24.16+ within Node 24**, or **26.1+**.
-- OpenClaw **2026.10.5**, including plugin API **2026.10.5**. This exact host
-  version is the minimum and the tested compatibility target. Other releases
-  need a compatibility test before widening the peer/API range.
+- OpenClaw **2026.10.5 through 2026.11.4**, including the corresponding plugin
+  API. Other releases need a compatibility test before widening this range.
 - Stable `fit-agent >=0.1.0` **and integration protocol 1**. Version alone is
   insufficient: `integration-info --json` must advertise `doctor-json`,
   `status-json`, `fetch-json`, `workspace-assertion`, and `guarded-sync-v1`.
