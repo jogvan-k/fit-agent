@@ -1,6 +1,6 @@
 {
   "name": "@jogvan-k/fit-agent",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Safe typed FitAgent CLI tools for OpenClaw fitness workspaces and workout calendars",
   "type": "module",
   "license": "MIT",
@@ -44,7 +44,7 @@
     "zod": "4.3.6"
   },
   "peerDependencies": {
-    "openclaw": "2026.10.5"
+    "openclaw": ">=2026.10.5 <=2026.11.4"
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
@@ -61,7 +61,7 @@
       "./dist/index.js"
     ],
     "compat": {
-      "pluginApi": "2026.10.5",
+      "pluginApi": ">=2026.10.5 <=2026.11.4",
       "minGatewayVersion": "2026.10.5"
     },
     "build": {

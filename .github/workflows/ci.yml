@@ -29,6 +29,8 @@ jobs:
         run: git diff --exit-code -- schemas openclaw.plugin.json
       - name: ClawHub package validation
         run: npm exec -- clawhub package validate . --openclaw-version 2026.10.5 --out .validation --runtime --allow-execute --no-mock-sdk
+      - name: Validate compatibility with OpenClaw 2026.11.4
+        run: npm exec -- clawhub package validate . --openclaw-version 2026.11.4 --out .validation-2026-11 --runtime --allow-execute --no-mock-sdk
       - name: ClawHub publish dry-run
         run: npm exec -- clawhub package publish . --owner jogvan-k --source-repo jogvan-k/fit-agent --source-path plugin --dry-run
 
